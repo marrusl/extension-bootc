@@ -470,6 +470,7 @@ export class BootcApiImpl implements BootcApi {
 
     const remoteUsername = vm.RemoteUsername;
     const port = vm.Port;
+    console.log('[VM Terminal] Raw IdentityPath from macadam:', vm.IdentityPath);
     // macadam may return paths with a ~/ prefix; Node.js does not expand this
     // automatically — apply the same resolution used in MacadamHandler.createVm.
     const resolvedKeyPath = vm.IdentityPath.replace(/^~\//, `${process.env.HOME}/`);
