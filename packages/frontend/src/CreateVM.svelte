@@ -24,14 +24,24 @@ let sshPrivateKeyLocation = $state('');
 let sshUsername = $state('');
 let virtualMachineName = $state('');
 
+// Track whether each required field has been interacted with so we don't
+// show "missing field" errors on the initial empty page load.
+let imagePathTouched = $state(false);
+let virtualMachineNameTouched = $state(false);
+
 // An array of strings to store the list of VM names to be used for validation
 let existingVMNames = $state<string[]>([]);
 
-// Validate imagePath as well as virtualMachineName & existingVMNames. We should prioritize the imagePath first however
-// as it's the most important one. If the imagePath is not valid, we should not even check for the VM name / check list VMs.
+// Validate imagePath and virtualMachineName. Priority order:
+// 1. invalid image format, 2. missing image path, 3. missing VM name, 4. duplicate VM name.
+// Missing-field errors are only shown once the field has been touched (or submit was attempted).
 $effect(() => {
   if (imagePath && !(imagePath.endsWith('.raw') || imagePath.endsWith('.qcow2'))) {
     errorFormValidation = 'Only raw or qcow2 file formats are supported. Please select a valid image file.';
+  } else if (!imagePath && imagePathTouched) {
+    errorFormValidation = 'An image file path is required. Please select a raw or qcow2 image file.';
+  } else if (!virtualMachineName && virtualMachineNameTouched) {
+    errorFormValidation = 'A virtual machine name is required.';
   } else if (virtualMachineName && existingVMNames.includes(virtualMachineName)) {
     errorFormValidation =
       'The virtual machine name already exists. Please choose a different name or delete the existing virtual machine under Settings > Resources.';
@@ -96,8 +106,11 @@ async function listNamesOfVms(): Promise<string[]> {
 }
 
 async function createVM(): Promise<void> {
-  if (!imagePath) {
-    // can never happen, just for typecheck
+  // Mark all required fields as touched so validation messages surface immediately.
+  imagePathTouched = true;
+  virtualMachineNameTouched = true;
+
+  if (errorFormValidation || !imagePath || !virtualMachineName) {
     return;
   }
   createInProgress = true;
@@ -180,7 +193,10 @@ async function createVM(): Promise<void> {
               bind:value={virtualMachineName}
               placeholder="Name for your virtual machine"
               class="w-full"
-              aria-label="vm-name" />
+              aria-label="vm-name"
+              onblur={(): void => {
+                virtualMachineNameTouched = true;
+              }} />
           </div>
           <div class="pb-4">
             <label for="path" class="block mb-2 font-semibold">Image file location (*.raw or *.qcow2)</label>
@@ -191,7 +207,10 @@ async function createVM(): Promise<void> {
                 bind:value={imagePath}
                 placeholder="Output folder"
                 class="w-full"
-                aria-label="folder-select" />
+                aria-label="folder-select"
+                onblur={(): void => {
+                  imagePathTouched = true;
+                }} />
               <Button on:click={(): Promise<void> => getVMImageFile()}>Browse...</Button>
             </div>
           </div>
@@ -222,7 +241,10 @@ async function createVM(): Promise<void> {
         {#if errorFormValidation !== ''}
           <ErrorMessage aria-label="validation" error={errorFormValidation} />
         {/if}
-        <Button class="w-full" on:click={createVM} disabled={errorFormValidation !== '' || createInProgress}
+        <Button
+          class="w-full"
+          on:click={createVM}
+          disabled={errorFormValidation !== '' || !imagePath || !virtualMachineName || createInProgress}
           >Create Virtual Machine</Button>
       </div>
     {/if}
