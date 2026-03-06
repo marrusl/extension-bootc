@@ -474,6 +474,16 @@ export class BootcApiImpl implements BootcApi {
     const resolvedKeyPath = vm.IdentityPath.replace(/^~\//, `${process.env.HOME}/`);
     const privateKey = fs.readFileSync(resolvedKeyPath);
 
+    console.log('[VM Terminal Debug]', {
+      host: 'localhost',
+      port: vm.Port,
+      username: vm.RemoteUsername,
+      identityPath: vm.IdentityPath,
+      resolvedKeyPath: resolvedKeyPath,
+      keyLength: privateKey?.length,
+      keyStart: privateKey?.toString().substring(0, 50),
+    });
+
     return new Promise<void>((resolve, reject) => {
       this.sshClient = new SSHClient();
       this.sshClient
