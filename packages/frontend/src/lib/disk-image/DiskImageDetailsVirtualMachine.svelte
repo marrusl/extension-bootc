@@ -14,6 +14,9 @@ import { Messages } from '/@shared/src/messages/Messages';
 import type { Subscriber } from '/@shared/src/messages/MessageProxy';
 import type { BootcBuildInfo } from '/@shared/src/models/bootc';
 import { REPOSITORY_URL } from '/@shared/src/repository-infos';
+import Fa from 'svelte-fa';
+import { faCopy, faCheck } from '@fortawesome/free-solid-svg-icons';
+import type { VmDetails } from '@crc-org/macadam.js';
 
 interface Props {
   build: BootcBuildInfo | undefined;
@@ -37,6 +40,10 @@ let vmLaunchError = $state<string>();
 let vmLaunchPrereqs = $state<string>();
 let notifySubscriber = $state<Subscriber>();
 
+// SSH connection info fetched from VM details once the VM is running
+let sshCommand = $state('');
+let sshCopied = $state(false);
+
 const VM_LAUNCH_ERROR_MESSAGE = 'VM launch error';
 const GUIDE_LINK = `${REPOSITORY_URL}/blob/main/docs/vm_launcher.md`;
 
@@ -44,11 +51,22 @@ const GUIDE_LINK = `${REPOSITORY_URL}/blob/main/docs/vm_launcher.md`;
 // which are needed to update the connection status
 function closeHandler(event: CloseEvent): void {
   connectionStatus = 'VM stopped';
+  sshCommand = '';
 }
 
-function openHandler(event: Event): void {
+async function openHandler(event: Event): Promise<void> {
   connectionStatus = 'VM started';
   noLogs = false;
+
+  try {
+    const vms = await bootcClient.listVMs();
+    const runningVm = vms.find((vm: VmDetails) => vm.Running);
+    if (runningVm) {
+      sshCommand = `ssh -p ${runningVm.Port} ${runningVm.RemoteUsername}@localhost`;
+    }
+  } catch (e) {
+    console.error('Failed to fetch VM details for SSH command:', e);
+  }
 }
 
 function errorHandler(event: Event): void {
@@ -284,6 +302,18 @@ onDestroy(async () => {
   notifySubscriber?.unsubscribe();
 });
 
+async function copySshCommand(): Promise<void> {
+  try {
+    await navigator.clipboard.writeText(sshCommand);
+    sshCopied = true;
+    setTimeout(() => {
+      sshCopied = false;
+    }, 2000);
+  } catch (e) {
+    console.error('Failed to copy SSH command to clipboard:', e);
+  }
+}
+
 export function goToHomePage(): void {
   router.goto('/');
 }
@@ -320,6 +350,19 @@ export function goToHomePage(): void {
 <div class="absolute top-[70px] right-[5px]">
   <DiskImageConnectionStatus status={connectionStatus} />
 </div>
+{#if connectionStatus === 'VM started' && sshCommand}
+  <div
+    class="flex items-center gap-2 px-3 py-2 mx-[5px] mt-[5px] bg-[var(--pd-label-bg)] text-[var(--pd-label-text)] rounded text-sm">
+    <span class="text-[var(--pd-status-connected)] font-medium">SSH:</span>
+    <code class="font-mono select-all">{sshCommand}</code>
+    <button
+      class="ml-auto p-1 rounded cursor-pointer hover:opacity-80"
+      title={sshCopied ? 'Copied!' : 'Copy to clipboard'}
+      onclick={copySshCommand}>
+      <Fa icon={sshCopied ? faCheck : faCopy} size="sm" />
+    </button>
+  </div>
+{/if}
 <div
   class="min-w-full flex flex-col p-[5px] pb-[10px] pr-0 bg-[var(--pd-terminal-background)]"
   class:invisible={noLogs}
