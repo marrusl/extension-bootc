@@ -39,14 +39,6 @@ let vmImageLabels = $derived.by(() => {
   return labels;
 });
 
-let vmMatchingBuilds = $derived.by(() => {
-  const result: Record<string, BootcBuildInfo | undefined> = {};
-  for (const vm of vms) {
-    result[vm.Name] = builds.find(b => vm.Image.startsWith(b.folder));
-  }
-  return result;
-});
-
 async function loadVMs(): Promise<void> {
   try {
     vms = await bootcClient.listVMs();
@@ -212,13 +204,10 @@ onDestroy(() => {
               {/if}
               {#if status === 'running'}
                 <Button on:click={(): Promise<void> => stopVM(vm.Name)} icon={faStop} title="Stop VM">Stop</Button>
-                {#if vmMatchingBuilds[vm.Name]}
-                  {@const build = vmMatchingBuilds[vm.Name]}
-                  <Button
-                    on:click={(): void => { router.goto(`/disk-image/${btoa(build.id)}/vm`); }}
-                    icon={faTerminal}
-                    title="Open terminal">Terminal</Button>
-                {/if}
+                <Button
+                  on:click={(): void => { router.goto('/virtual-machines/terminal'); }}
+                  icon={faTerminal}
+                  title="Open terminal">Terminal</Button>
               {/if}
               <Button
                 on:click={(): void => { confirmingDelete[vm.Name] = true; }}

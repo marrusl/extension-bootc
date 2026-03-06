@@ -16,6 +16,7 @@ import ExampleDetails from './lib/examples/ExampleDetails.svelte';
 import ImagesList from './lib/images/ImagesList.svelte';
 import CreateVM from './CreateVM.svelte';
 import VirtualMachineList from './lib/virtual-machines/VirtualMachineList.svelte';
+import VirtualMachineTerminal from './lib/virtual-machines/VirtualMachineTerminal.svelte';
 
 router.mode.hash();
 
@@ -66,6 +67,9 @@ onMount(() => {
       </Route>
       <Route path="/virtual-machines" breadcrumb="Virtual Machines">
         <VirtualMachineList />
+      </Route>
+      <Route path="/virtual-machines/terminal" breadcrumb="VM Terminal">
+        <VirtualMachineTerminal />
       </Route>
       <Route path="/disk-images/createVM" breadcrumb="Create Virtual Machine">
         <CreateVM />
