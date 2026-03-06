@@ -67,6 +67,9 @@ vi.mock(
           createVm = vi.fn();
           init = vi.fn();
           listVms = vi.fn();
+          startVm = vi.fn();
+          stopVm = vi.fn();
+          removeVm = vi.fn();
         },
       ),
     }) as unknown as typeof macadam,
@@ -171,4 +174,49 @@ test('Test listing VMs with MacadamHandler', async () => {
 
   expect(macadamInstance.listVms).toHaveBeenCalled();
   expect(vms).toEqual([{ name: 'test-vm' }]);
+});
+
+test('Test startVm with MacadamHandler on Mac resolves correct provider and name', async () => {
+  const macadamVm = new MacadamHandler(TELEMETRY_LOGGER_MOCK);
+  const macadamInstance = (macadam.Macadam as Mock).mock.results[0].value;
+  macadamInstance.startVm.mockResolvedValue(undefined);
+  vi.mocked(extensionApi.env).isMac = true;
+
+  await macadamVm.startVm('test-vm');
+
+  expect(macadamInstance.init).toHaveBeenCalled();
+  expect(macadamInstance.startVm).toHaveBeenCalledWith({
+    name: 'test-vm',
+    containerProvider: 'applehv',
+  });
+});
+
+test('Test stopVm with MacadamHandler on Mac resolves correct provider and name', async () => {
+  const macadamVm = new MacadamHandler(TELEMETRY_LOGGER_MOCK);
+  const macadamInstance = (macadam.Macadam as Mock).mock.results[0].value;
+  macadamInstance.stopVm.mockResolvedValue(undefined);
+  vi.mocked(extensionApi.env).isMac = true;
+
+  await macadamVm.stopVm('test-vm');
+
+  expect(macadamInstance.init).toHaveBeenCalled();
+  expect(macadamInstance.stopVm).toHaveBeenCalledWith({
+    name: 'test-vm',
+    containerProvider: 'applehv',
+  });
+});
+
+test('Test removeVm with MacadamHandler on Mac resolves correct provider and name', async () => {
+  const macadamVm = new MacadamHandler(TELEMETRY_LOGGER_MOCK);
+  const macadamInstance = (macadam.Macadam as Mock).mock.results[0].value;
+  macadamInstance.removeVm.mockResolvedValue(undefined);
+  vi.mocked(extensionApi.env).isMac = true;
+
+  await macadamVm.removeVm('test-vm');
+
+  expect(macadamInstance.init).toHaveBeenCalled();
+  expect(macadamInstance.removeVm).toHaveBeenCalledWith({
+    name: 'test-vm',
+    containerProvider: 'applehv',
+  });
 });

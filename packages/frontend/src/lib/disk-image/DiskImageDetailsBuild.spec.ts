@@ -105,3 +105,47 @@ test('Refreshes logs correctly', async () => {
   vi.runOnlyPendingTimers();
   expect(bootcClient.loadLogsFromFolder).toHaveBeenCalledTimes(2);
 });
+
+test('stepper is visible and Installing packages is the active phase when rpm marker is in logs', async () => {
+  vi.mocked(bootcClient.loadLogsFromFolder).mockResolvedValue('org.osbuild.rpm\nsome build output');
+  vi.mocked(bootcClient.getConfigurationValue).mockResolvedValue(14);
+
+  render(DiskImageDetailsBuild, { folder: '/path/to/logs', status: 'running' });
+
+  await waitFor(() => {
+    // Stepper is rendered and the active phase label is present
+    expect(screen.getByText('Installing packages')).toBeInTheDocument();
+    // Phase 0 ("Build started") is now completed — its circle shows a checkmark
+    expect(screen.getByText('✓')).toBeInTheDocument();
+  });
+});
+
+test('stepper shows Complete as the active phase when Build complete! marker is in logs', async () => {
+  vi.mocked(bootcClient.loadLogsFromFolder).mockResolvedValue(
+    'org.osbuild.rpm\norg.osbuild.selinux\norg.osbuild.ostree.config\norg.osbuild.qemu\nBuild complete!',
+  );
+  vi.mocked(bootcClient.getConfigurationValue).mockResolvedValue(14);
+
+  render(DiskImageDetailsBuild, { folder: '/path/to/logs', status: 'running' });
+
+  await waitFor(() => {
+    expect(screen.getByText('Complete')).toBeInTheDocument();
+    // All 5 preceding phases (indices 0–4) are completed and show checkmarks
+    expect(screen.getAllByText('✓')).toHaveLength(5);
+  });
+});
+
+test('stepper is not visible when status is success', async () => {
+  vi.mocked(bootcClient.loadLogsFromFolder).mockResolvedValue('org.osbuild.rpm\nsome build output');
+  vi.mocked(bootcClient.getConfigurationValue).mockResolvedValue(14);
+
+  render(DiskImageDetailsBuild, { folder: '/path/to/logs', status: 'success' });
+
+  await waitFor(() => {
+    expect(bootcClient.loadLogsFromFolder).toHaveBeenCalled();
+  });
+
+  // Logs are loaded (noLogs === false) but status is terminal — stepper must not render
+  expect(screen.queryByText('Installing packages')).not.toBeInTheDocument();
+  expect(screen.queryByText('Build started')).not.toBeInTheDocument();
+});

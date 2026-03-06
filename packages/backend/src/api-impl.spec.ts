@@ -162,6 +162,33 @@ test('listVMs should call the extension api', async () => {
   expect(MacadamHandler.prototype.listVms).toHaveBeenCalled();
 });
 
+test('startVM should call the extension api', async () => {
+  vi.spyOn(MacadamHandler.prototype, 'startVm').mockResolvedValue(undefined);
+
+  const apiImpl = createAPI();
+  await apiImpl.startVM('test-vm');
+
+  expect(MacadamHandler.prototype.startVm).toHaveBeenCalledWith('test-vm');
+});
+
+test('stopVM should call the extension api', async () => {
+  vi.spyOn(MacadamHandler.prototype, 'stopVm').mockResolvedValue(undefined);
+
+  const apiImpl = createAPI();
+  await apiImpl.stopVM('test-vm');
+
+  expect(MacadamHandler.prototype.stopVm).toHaveBeenCalledWith('test-vm');
+});
+
+test('deleteVM should call the extension api', async () => {
+  vi.spyOn(MacadamHandler.prototype, 'removeVm').mockResolvedValue(undefined);
+
+  const apiImpl = createAPI();
+  await apiImpl.deleteVM('test-vm');
+
+  expect(MacadamHandler.prototype.removeVm).toHaveBeenCalledWith('test-vm');
+});
+
 test('check listVMs passes underlying error message', async () => {
   vi.spyOn(MacadamHandler.prototype, 'listVms').mockRejectedValue('list failed');
 

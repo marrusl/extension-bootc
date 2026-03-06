@@ -18,7 +18,7 @@
 
 import '@testing-library/jest-dom/vitest';
 
-import { render, screen } from '@testing-library/svelte';
+import { fireEvent, render, screen } from '@testing-library/svelte';
 import { beforeEach, expect, test, vi } from 'vitest';
 
 import CreateVM from './CreateVM.svelte';
@@ -115,6 +115,44 @@ test('Test pressing Create Virtual Machine calls bootcClient.createVM', async ()
     name: 'foobar',
     sshIdentityPath: '',
     username: '',
+  });
+});
+
+test('Button is disabled when neither imageName nor imagePath is provided', async () => {
+  render(CreateVM, {});
+
+  const createButton = screen.getByRole('button', { name: 'Create Virtual Machine' });
+  expect(createButton).toBeDisabled();
+});
+
+test('Button is disabled when imagePath is missing', async () => {
+  render(CreateVM, { imageName: 'foobar' });
+
+  const createButton = screen.getByRole('button', { name: 'Create Virtual Machine' });
+  expect(createButton).toBeDisabled();
+});
+
+test('Button is disabled when virtual machine name is empty', async () => {
+  // No imageName → virtualMachineName defaults to '' after mount
+  render(CreateVM, { imagePath: '/path/to/image.qcow2' });
+
+  const createButton = screen.getByRole('button', { name: 'Create Virtual Machine' });
+  expect(createButton).toBeDisabled();
+});
+
+test('Clicking Create with empty fields surfaces a validation error message', async () => {
+  // imageName provided but no imagePath — button is disabled, touched flags start false
+  render(CreateVM, { imageName: 'foobar' });
+
+  const createButton = screen.getByRole('button', { name: 'Create Virtual Machine' });
+
+  // fireEvent.click uses dispatchEvent which bypasses the HTML disabled check and
+  // fires Svelte's onclick listener directly — createVM() sets imagePathTouched = true,
+  // causing the $effect to surface the "image file path is required" error message.
+  await fireEvent.click(createButton);
+
+  await vi.waitFor(() => {
+    expect(screen.getByText(/An image file path is required/)).toBeInTheDocument();
   });
 });
 
