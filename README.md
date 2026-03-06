@@ -333,6 +333,10 @@ podman pull registry.redhat.io/rhel10/rhel-bootc:latest
 
 ## Known issues
 
+### VM operation progress bar stays at 10%
+
+When starting, stopping, or deleting a virtual machine, the Podman Desktop task widget shows progress advancing to 10% (after the macadam binary initialises) and then remaining there until the operation completes, at which point it jumps to 100%. This is because the macadam library does not currently expose incremental progress callbacks. The operation is running normally — the progress bar is not an accurate reflection of how far along it is. This is a known limitation that will be addressed once the underlying library supports progress events.
+
 ### (Windows only) Unable to use Hyper-V provider
 
 Building with a Hyper-V Podman Machine is currently [not supported](https://github.com/podman-desktop/extension-bootc/issues/1963). The Podman Machine must be [setup using a WSL2 provider](https://podman-desktop.io/docs/installation/windows-install#use-wsl2-as-machine-provider).
