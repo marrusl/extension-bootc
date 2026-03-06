@@ -44,6 +44,8 @@ export class BootcApiImpl implements BootcApi {
   // Single active SSH terminal session
   private sshClient: SSHClient | undefined;
   private sshStream: ClientChannel | undefined;
+  private passwordCallback: ((result: object | false) => void) | undefined;
+  private pendingUsername: string | undefined;
 
   constructor(
     private readonly extensionContext: podmanDesktopApi.ExtensionContext,
@@ -470,7 +472,6 @@ export class BootcApiImpl implements BootcApi {
 
     const remoteUsername = vm.RemoteUsername;
     const port = vm.Port;
-    console.log('[VM Terminal] Raw IdentityPath from macadam:', vm.IdentityPath);
     // macadam may return paths with a ~/ prefix; Node.js does not expand this
     // automatically — apply the same resolution used in MacadamHandler.createVm.
     const resolvedKeyPath = vm.IdentityPath.replace(/^~\//, `${process.env.HOME}/`);
@@ -503,7 +504,10 @@ export class BootcApiImpl implements BootcApi {
             }
             if (!triedPassword) {
               triedPassword = true;
-              this.promptForPassword(remoteUsername, cb, reject).catch(console.error);
+              this.passwordCallback = cb as unknown as (result: object | false) => void;
+              this.pendingUsername = remoteUsername;
+              this.notify(Messages.MSG_VM_TERMINAL_NEEDS_PASSWORD, {}).catch(console.error);
+              resolve();
               return;
             }
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -538,28 +542,13 @@ export class BootcApiImpl implements BootcApi {
     resolve();
   }
 
-  private async promptForPassword(
-    remoteUsername: string,
-    cb: (method: { type: 'password'; username: string; password: string }) => void,
-    reject: (err: Error) => void,
-  ): Promise<void> {
-    try {
-      const password = await podmanDesktopApi.window.showInputBox({
-        title: 'VM Authentication',
-        prompt: `Password for ${remoteUsername}@localhost`,
-        password: true,
-      });
-      if (password === undefined) {
-        await this.notify(Messages.MSG_VM_TERMINAL_ERROR, { error: 'Authentication cancelled' });
-        this.closeVMTerminalSync();
-        reject(new Error('Authentication cancelled'));
-        return;
-      }
-      cb({ type: 'password', username: remoteUsername, password });
-    } catch (err) {
-      this.closeVMTerminalSync();
-      reject(err instanceof Error ? err : new Error(String(err)));
-    }
+  async submitVMTerminalPassword(password: string): Promise<void> {
+    if (!this.passwordCallback || !this.pendingUsername) return;
+    const cb = this.passwordCallback;
+    const username = this.pendingUsername;
+    this.passwordCallback = undefined;
+    this.pendingUsername = undefined;
+    cb({ type: 'password', username, password });
   }
 
   async writeToVMTerminal(data: string): Promise<void> {
@@ -571,6 +560,12 @@ export class BootcApiImpl implements BootcApi {
   }
 
   private closeVMTerminalSync(): void {
+    if (this.passwordCallback) {
+      const cb = this.passwordCallback;
+      this.passwordCallback = undefined;
+      this.pendingUsername = undefined;
+      cb(false);
+    }
     this.sshStream?.close();
     this.sshClient?.end();
     this.sshClient?.destroy();

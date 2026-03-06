@@ -25,4 +25,5 @@ export enum Messages {
   MSG_VM_TERMINAL_DATA = 'vm-terminal-data',
   MSG_VM_TERMINAL_CLOSED = 'vm-terminal-closed',
   MSG_VM_TERMINAL_ERROR = 'vm-terminal-error',
+  MSG_VM_TERMINAL_NEEDS_PASSWORD = 'vm-terminal-needs-password',
 }

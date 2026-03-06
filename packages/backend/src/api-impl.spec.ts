@@ -45,7 +45,6 @@ vi.mock(
       window: {
         showErrorMessage: vi.fn(),
         showOpenDialog: vi.fn(),
-        showInputBox: vi.fn(),
       },
       containerEngine: {
         listImages: vi.fn(),
@@ -391,7 +390,7 @@ test('closeVMTerminal closes stream and client without stopping the VM', async (
   expect(mockStreamWrite).not.toHaveBeenCalled();
 });
 
-test('openVMTerminal falls back to password auth when no key file exists', async () => {
+test('openVMTerminal posts MSG_VM_TERMINAL_NEEDS_PASSWORD when no key file exists', async () => {
   const mockVm = {
     Name: 'test-vm',
     Running: true,
@@ -401,46 +400,60 @@ test('openVMTerminal falls back to password auth when no key file exists', async
   } as macadam.VmDetails;
 
   vi.spyOn(MacadamHandler.prototype, 'listVms').mockResolvedValue([mockVm]);
-  // eslint-disable-next-line sonarjs/no-hardcoded-passwords
-  vi.mocked(podmanDesktopApi.window.showInputBox).mockResolvedValue('my-pass');
-
-  const apiImpl = createAPI();
-  await apiImpl.openVMTerminal('test-vm');
-
-  expect(podmanDesktopApi.window.showInputBox).toHaveBeenCalledWith({
-    title: 'VM Authentication',
-    prompt: 'Password for root@localhost',
-    password: true,
-  });
-  expect(mockAuthCallback).toHaveBeenCalledWith(
-    // eslint-disable-next-line sonarjs/no-hardcoded-passwords
-    expect.objectContaining({ type: 'password', username: 'root', password: 'my-pass' }),
-  );
-});
-
-test('openVMTerminal posts error and cleans up when user cancels password prompt', async () => {
-  const mockVm = {
-    Name: 'test-vm',
-    Running: true,
-    Port: 2222,
-    RemoteUsername: 'root',
-    IdentityPath: '',
-  } as macadam.VmDetails;
-
-  vi.spyOn(MacadamHandler.prototype, 'listVms').mockResolvedValue([mockVm]);
-  vi.mocked(podmanDesktopApi.window.showInputBox).mockResolvedValue(undefined);
 
   const postMessageMock = vi.fn().mockResolvedValue(undefined);
   const apiImpl = new BootcApiImpl({} as podmanDesktopApi.ExtensionContext, TELEMETRY_LOGGER_MOCK, {
     postMessage: postMessageMock,
   } as unknown as podmanDesktopApi.Webview);
 
-  await expect(apiImpl.openVMTerminal('test-vm')).rejects.toThrow('Authentication cancelled');
+  await apiImpl.openVMTerminal('test-vm');
 
   expect(postMessageMock).toHaveBeenCalledWith({
-    id: Messages.MSG_VM_TERMINAL_ERROR,
-    body: { error: 'Authentication cancelled' },
+    id: Messages.MSG_VM_TERMINAL_NEEDS_PASSWORD,
+    body: {},
   });
+});
+
+test('submitVMTerminalPassword invokes the stored auth callback with correct args', async () => {
+  const mockVm = {
+    Name: 'test-vm',
+    Running: true,
+    Port: 2222,
+    RemoteUsername: 'root',
+    IdentityPath: '',
+  } as macadam.VmDetails;
+
+  vi.spyOn(MacadamHandler.prototype, 'listVms').mockResolvedValue([mockVm]);
+
+  const apiImpl = createAPI();
+  await apiImpl.openVMTerminal('test-vm');
+
+  // eslint-disable-next-line sonarjs/no-hardcoded-passwords
+  await apiImpl.submitVMTerminalPassword('my-pass');
+
+  expect(mockAuthCallback).toHaveBeenCalledWith(
+    // eslint-disable-next-line sonarjs/no-hardcoded-passwords
+    expect.objectContaining({ type: 'password', username: 'root', password: 'my-pass' }),
+  );
+});
+
+test('closeVMTerminal with pending password callback invokes it with false', async () => {
+  const mockVm = {
+    Name: 'test-vm',
+    Running: true,
+    Port: 2222,
+    RemoteUsername: 'root',
+    IdentityPath: '',
+  } as macadam.VmDetails;
+
+  vi.spyOn(MacadamHandler.prototype, 'listVms').mockResolvedValue([mockVm]);
+
+  const apiImpl = createAPI();
+  await apiImpl.openVMTerminal('test-vm');
+
+  await apiImpl.closeVMTerminal();
+
+  expect(mockAuthCallback).toHaveBeenCalledWith(false);
   expect(mockClientEnd).toHaveBeenCalled();
   expect(mockClientDestroy).toHaveBeenCalled();
 });
