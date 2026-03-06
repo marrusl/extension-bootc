@@ -8,6 +8,9 @@
 > - SSH connection details shown on the VM terminal view
 > - Form validation on the Create Virtual Machine screen
 > - A dedicated Virtual Machines view for managing VMs without leaving the extension
+>   - Start, Stop, and Delete actions per VM with inline delete confirmation
+>   - SSH command display with one-click copy-to-clipboard for running VMs
+>   - Terminal button on running VMs that attaches to the live console without relaunching the VM
 > - Direct navigation to the Virtual Machines view after VM creation
 >
 > **Installation:**
