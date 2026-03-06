@@ -1,44 +1,40 @@
 <script lang="ts">
 import '@xterm/xterm/css/xterm.css';
 import { FitAddon } from '@xterm/addon-fit';
-import { AttachAddon } from '@xterm/addon-attach';
 import { Terminal } from '@xterm/xterm';
 import { onDestroy, onMount } from 'svelte';
 import { router } from 'tinro';
-import { bootcClient } from '/@/api/client';
+import { bootcClient, rpcBrowser } from '/@/api/client';
 import { getTerminalTheme } from '/@/lib/upstream/terminal-theme';
+import { Messages } from '/@shared/src/messages/Messages';
+import type { Subscriber } from '/@shared/src/messages/MessageProxy';
 import { EmptyScreen, Button } from '@podman-desktop/ui-svelte';
 
-// Attach-only terminal — connects to the already-running VM's WebSocket
-// without launching or stopping the VM. Use this when the VM was started
-// externally (e.g. from the Virtual Machines list view).
+interface Props {
+  name: string;
+}
+let { name }: Props = $props();
 
-const WS_PORT = 45252;
-
-let logsXtermDiv = $state<HTMLDivElement>();
-let noLogs = $state(true);
-let connectError = $state('');
-let resizeObserver = $state<ResizeObserver>();
+let termDiv = $state<HTMLDivElement>();
+let terminal = $state<Terminal>();
 let termFit = $state<FitAddon>();
-let logsTerminal = $state<Terminal>();
-let socket = $state<WebSocket>();
+let resizeObserver = $state<ResizeObserver>();
 
-function closeHandler(): void {
-  noLogs = true;
-  connectError = 'The VM has stopped or the connection was lost.';
-}
+let connecting = $state(true);
+let connectError = $state('');
+let sessionEnded = $state(false);
 
-function errorHandler(): void {
-  connectError = `Unable to connect to the VM terminal on port ${WS_PORT}. Make sure the VM is running.`;
-}
+let dataSubscriber = $state<Subscriber>();
+let closedSubscriber = $state<Subscriber>();
+let errorSubscriber = $state<Subscriber>();
 
-async function attachTerminal(): Promise<void> {
-  if (!logsXtermDiv) return;
+async function initTerminal(): Promise<void> {
+  if (!termDiv) return;
 
   const fontSize = (await bootcClient.getConfigurationValue('terminal', 'integrated.fontSize')) as number;
   const lineHeight = (await bootcClient.getConfigurationValue('terminal', 'integrated.lineHeight')) as number;
 
-  logsTerminal = new Terminal({
+  terminal = new Terminal({
     fontSize,
     lineHeight,
     theme: getTerminalTheme(),
@@ -47,45 +43,27 @@ async function attachTerminal(): Promise<void> {
   });
 
   termFit = new FitAddon();
-  logsTerminal.loadAddon(termFit);
-  logsTerminal.open(logsXtermDiv);
-  logsTerminal.write('\x1b[?25l');
+  terminal.loadAddon(termFit);
+  terminal.open(termDiv);
 
-  window.addEventListener('resize', () => {
+  window.addEventListener('resize', (): void => {
     termFit?.fit();
   });
   termFit.fit();
 
-  try {
-    socket = new WebSocket(`ws://127.0.0.1:${WS_PORT}`);
-    socket.binaryType = 'arraybuffer';
-    socket.onclose = closeHandler;
-    socket.onerror = errorHandler;
-    socket.onopen = (): void => {
-      noLogs = false;
-      connectError = '';
-    };
-  } catch {
-    connectError = `Failed to connect to VM terminal on port ${WS_PORT}.`;
-    return;
-  }
-
-  const attachAddon = new AttachAddon(socket);
-  logsTerminal.loadAddon(attachAddon);
-
-  logsTerminal.onKey((e: { key: string }) => {
-    if (socket?.readyState === WebSocket.OPEN) {
-      socket.send(new TextEncoder().encode(e.key).buffer);
+  terminal.onKey((e: { key: string }) => {
+    if (!sessionEnded) {
+      bootcClient.writeToVMTerminal(e.key).catch((err: unknown) => console.error('write error', err));
     }
   });
 
-  logsTerminal.attachCustomKeyEventHandler((arg: KeyboardEvent) => {
+  terminal.attachCustomKeyEventHandler((arg: KeyboardEvent) => {
     if ((arg.ctrlKey || arg.metaKey) && arg.code === 'KeyV' && arg.type === 'keydown') {
       bootcClient
         .readFromClipboard()
         .then(text => {
-          if (socket?.readyState === WebSocket.OPEN) {
-            socket.send(new TextEncoder().encode(text).buffer);
+          if (!sessionEnded) {
+            bootcClient.writeToVMTerminal(text).catch((err: unknown) => console.error('paste error', err));
           }
         })
         .catch((e: unknown) => console.error('clipboard read error', e));
@@ -98,40 +76,72 @@ onMount(async () => {
   resizeObserver = new ResizeObserver(() => {
     termFit?.fit();
   });
-  if (logsXtermDiv) resizeObserver.observe(logsXtermDiv);
-  await attachTerminal();
+  if (termDiv) {
+    resizeObserver.observe(termDiv);
+  }
+
+  dataSubscriber = rpcBrowser.subscribe(Messages.MSG_VM_TERMINAL_DATA, (msg: { data: string }) => {
+    terminal?.write(msg.data);
+  });
+
+  closedSubscriber = rpcBrowser.subscribe(Messages.MSG_VM_TERMINAL_CLOSED, () => {
+    sessionEnded = true;
+    terminal?.write('\r\n\x1b[33mConnection closed.\x1b[0m\r\n');
+  });
+
+  errorSubscriber = rpcBrowser.subscribe(Messages.MSG_VM_TERMINAL_ERROR, (msg: { error: string }) => {
+    sessionEnded = true;
+    terminal?.write(`\r\n\x1b[31mError: ${msg.error}\x1b[0m\r\n`);
+  });
+
+  await initTerminal();
+
+  try {
+    await bootcClient.openVMTerminal(name);
+    connecting = false;
+  } catch (e) {
+    connectError = e instanceof Error ? e.message : String(e);
+    connecting = false;
+  }
 });
 
 onDestroy(() => {
-  if (logsXtermDiv) resizeObserver?.unobserve(logsXtermDiv);
-  // Close the WebSocket but do NOT stop the VM — the VM lifecycle is
-  // managed by the user via the Virtual Machines list, not this view.
-  socket?.close();
-  logsTerminal?.dispose();
+  bootcClient.closeVMTerminal().catch((e: unknown) => console.error('close terminal error', e));
+
+  dataSubscriber?.unsubscribe();
+  closedSubscriber?.unsubscribe();
+  errorSubscriber?.unsubscribe();
+
+  if (termDiv) {
+    resizeObserver?.unobserve(termDiv);
+  }
+  terminal?.dispose();
 });
 </script>
 
 <div class="flex flex-col w-full h-full bg-[var(--pd-content-bg)]">
   <div class="flex items-center justify-between px-5 py-4 border-b border-[var(--pd-content-divider)]">
-    <h1 class="text-xl font-semibold text-[var(--pd-content-header)]">VM Terminal</h1>
+    <h1 class="text-xl font-semibold text-[var(--pd-content-header)]">Terminal — {name}</h1>
     <Button on:click={(): void => { router.goto('/virtual-machines'); }} title="Back to Virtual Machines">
       Back
     </Button>
   </div>
 
   {#if connectError}
-    <EmptyScreen icon={undefined} title="Connection error" message={connectError}>
+    <EmptyScreen icon={undefined} title="Connection failed" message={connectError}>
       <Button class="py-3" on:click={(): void => { router.goto('/virtual-machines'); }}>
         Back to Virtual Machines
       </Button>
     </EmptyScreen>
+  {:else if connecting}
+    <EmptyScreen icon={undefined} title="Connecting..." message="Opening SSH session to {name}..." />
   {/if}
 
   <div
     class="min-w-full flex flex-col p-[5px] pr-0 bg-[var(--pd-terminal-background)]"
-    class:invisible={noLogs}
-    class:h-0={noLogs}
-    class:h-full={!noLogs}
-    bind:this={logsXtermDiv}>
+    class:invisible={connecting || !!connectError}
+    class:h-0={connecting || !!connectError}
+    class:h-full={!connecting && !connectError}
+    bind:this={termDiv}>
   </div>
 </div>

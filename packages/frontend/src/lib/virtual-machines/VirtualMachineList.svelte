@@ -205,7 +205,7 @@ onDestroy(() => {
               {#if status === 'running'}
                 <Button on:click={(): Promise<void> => stopVM(vm.Name)} icon={faStop} title="Stop VM">Stop</Button>
                 <Button
-                  on:click={(): void => { router.goto('/virtual-machines/terminal'); }}
+                  on:click={(): void => { router.goto(`/virtual-machines/terminal/${encodeURIComponent(vm.Name)}`); }}
                   icon={faTerminal}
                   title="Open terminal">Terminal</Button>
               {/if}

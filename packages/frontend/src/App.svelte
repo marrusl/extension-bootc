@@ -68,8 +68,8 @@ onMount(() => {
       <Route path="/virtual-machines" breadcrumb="Virtual Machines">
         <VirtualMachineList />
       </Route>
-      <Route path="/virtual-machines/terminal" breadcrumb="VM Terminal">
-        <VirtualMachineTerminal />
+      <Route path="/virtual-machines/terminal/:name" breadcrumb="VM Terminal" let:meta>
+        <VirtualMachineTerminal name={decodeURIComponent(meta.params.name)} />
       </Route>
       <Route path="/disk-images/createVM" breadcrumb="Create Virtual Machine">
         <CreateVM />
