@@ -1,5 +1,7 @@
 # Release process for Podman Desktop Bootc Extension
 
+> **Note:** Release artifacts from this fork are experimental and are not affiliated with Red Hat or the official Podman Desktop project. The release process documented below is inherited from the upstream repository and may not apply directly to this fork.
+
 ## Pre-requisites
 
 - Create Enhancement Issue `Release vX.X.X` for the current sprint, and assign it to yourself.

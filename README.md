@@ -1,3 +1,29 @@
+> **Experimental Fork**
+>
+> This is an **experimental fork** of the official [podman-desktop/extension-bootc](https://github.com/podman-desktop/extension-bootc) extension. It is not affiliated with or endorsed by Red Hat or the Podman Desktop project.
+>
+> **Changes in this fork:**
+>
+> - Build phase progress indicators during disk image creation
+> - SSH connection details shown on the VM terminal view
+> - Form validation on the Create Virtual Machine screen
+> - A dedicated Virtual Machines view for managing VMs without leaving the extension
+> - Direct navigation to the Virtual Machines view after VM creation
+>
+> **Installation:**
+>
+> This fork shares the same extension ID (`redhat.bootc`) as the upstream extension. **You must uninstall the upstream `redhat.bootc` extension before installing this fork** — running both simultaneously will cause conflicts.
+>
+> To install, go to **Extensions > Catalog > Install custom...** in Podman Desktop and enter:
+>
+> ```
+> ghcr.io/marrusl/extension-bootc:latest
+> ```
+>
+> Replace `latest` with a specific tag once a release is published.
+
+---
+
 # BootC (Bootable Container) Extension for Podman Desktop
 
 ![](https://raw.githubusercontent.com/podman-desktop/extension-bootc/main/docs/img/banner.png)

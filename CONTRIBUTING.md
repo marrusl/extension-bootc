@@ -1,5 +1,7 @@
 # Contributing
 
+> **Note:** This is an experimental fork of [podman-desktop/extension-bootc](https://github.com/podman-desktop/extension-bootc). If you want to contribute to the official extension, please submit your changes to the [upstream repository](https://github.com/podman-desktop/extension-bootc). Contributions to this fork should be limited to the experimental features listed in the README.
+
 You can use `pnpm watch --extension-folder` from the Podman Desktop directory to automatically rebuild and test the bootc extension:
 
 ```sh
