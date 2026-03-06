@@ -500,6 +500,10 @@ export class BootcApiImpl implements BootcApi {
           port: vm.Port,
           username: vm.RemoteUsername,
           privateKey,
+          // Fall back to the SSH agent if the key file is passphrase-protected
+          // or in a format ssh2 can't parse directly. This matches how the
+          // normal ssh CLI authenticates on macOS/Linux.
+          agent: process.env.SSH_AUTH_SOCK,
         });
     });
   }
