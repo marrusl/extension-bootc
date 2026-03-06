@@ -72,7 +72,7 @@ onDestroy(() => {
       <DiskImageDetailsSummary image={diskImage} />
     </Route>
     <Route path="/build" breadcrumb="Build Log">
-      <DiskImageDetailsBuild folder={diskImage?.folder} />
+      <DiskImageDetailsBuild folder={diskImage?.folder} status={diskImage?.status} />
     </Route>
     <Route path="/vm" breadcrumb="Virtual Machine">
       <!-- Load after information is available since we have to wait for onMount to load the folder, image, arch. -->
