@@ -124,6 +124,7 @@ export class MacadamHandler {
           const provider = await this.resolveProvider();
           telemetryData.provider = provider;
 
+          await this.macadam.init();
           progress.report({ increment: 10 });
           await this.macadam.startVm({ name, containerProvider: provider });
           telemetryData.success = true;
@@ -153,6 +154,7 @@ export class MacadamHandler {
           const provider = await this.resolveProvider();
           telemetryData.provider = provider;
 
+          await this.macadam.init();
           progress.report({ increment: 10 });
           await this.macadam.stopVm({ name, containerProvider: provider });
           telemetryData.success = true;
@@ -182,6 +184,7 @@ export class MacadamHandler {
           const provider = await this.resolveProvider();
           telemetryData.provider = provider;
 
+          await this.macadam.init();
           progress.report({ increment: 10 });
           await this.macadam.removeVm({ name, containerProvider: provider });
           telemetryData.success = true;
