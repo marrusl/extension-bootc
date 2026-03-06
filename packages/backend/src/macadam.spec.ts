@@ -58,18 +58,45 @@ const progress = {
   report: (): void => {},
 };
 
+// Stateful mock: methods that require initialization throw if init() has not
+// been called first, matching the real Macadam library's behaviour and
+// ensuring tests catch missing init() calls at test time rather than runtime.
+// The class is defined inside the factory because vi.mock is hoisted and
+// cannot reference variables declared outside the factory closure.
 vi.mock(
   import('@crc-org/macadam.js'),
   () =>
     ({
       Macadam: vi.fn(
         class {
-          createVm = vi.fn();
-          init = vi.fn();
-          listVms = vi.fn();
-          startVm = vi.fn();
-          stopVm = vi.fn();
-          removeVm = vi.fn();
+          #initialized = false;
+
+          #requireInit(method: string): void {
+            if (!this.#initialized) {
+              throw new Error(`component not initialized. You must call init() before calling ${method}`);
+            }
+          }
+
+          init = vi.fn().mockImplementation(async () => {
+            this.#initialized = true;
+          });
+
+          createVm = vi.fn().mockImplementation(async () => {
+            this.#requireInit('createVm');
+          });
+          listVms = vi.fn().mockImplementation(async () => {
+            this.#requireInit('listVms');
+            return [];
+          });
+          startVm = vi.fn().mockImplementation(async () => {
+            this.#requireInit('startVm');
+          });
+          stopVm = vi.fn().mockImplementation(async () => {
+            this.#requireInit('stopVm');
+          });
+          removeVm = vi.fn().mockImplementation(async () => {
+            this.#requireInit('removeVm');
+          });
         },
       ),
     }) as unknown as typeof macadam,
