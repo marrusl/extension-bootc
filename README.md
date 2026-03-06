@@ -17,10 +17,10 @@
 > To install, go to **Extensions > Catalog > Install custom...** in Podman Desktop and enter:
 >
 > ```
-> ghcr.io/marrusl/extension-bootc:latest
+> ghcr.io/marrusl/extension-bootc:next
 > ```
 >
-> Replace `latest` with a specific tag once a release is published.
+> The `next` tag tracks the latest commit on `main` and is built automatically by CI.
 
 ---
 
