@@ -296,6 +296,29 @@ test('openVMTerminal connects SSH with correct VM details', async () => {
   expect(mockStreamWrite).toHaveBeenCalledWith('test');
 });
 
+test('openVMTerminal expands ~/ in IdentityPath before reading the key file', async () => {
+  const mockVm = {
+    Name: 'test-vm',
+    Running: true,
+    Port: 2222,
+    RemoteUsername: 'root',
+    IdentityPath: '~/.ssh/id_ed25519',
+  } as macadam.VmDetails;
+
+  vi.spyOn(MacadamHandler.prototype, 'listVms').mockResolvedValue([mockVm]);
+
+  const fs = await import('node:fs');
+  const originalHome = process.env.HOME;
+  process.env.HOME = '/home/testuser';
+
+  const apiImpl = createAPI();
+  await apiImpl.openVMTerminal('test-vm');
+
+  expect(fs.readFileSync).toHaveBeenCalledWith('/home/testuser/.ssh/id_ed25519');
+
+  process.env.HOME = originalHome;
+});
+
 test('writeToVMTerminal writes to the active stream', async () => {
   const mockVm = {
     Name: 'test-vm',

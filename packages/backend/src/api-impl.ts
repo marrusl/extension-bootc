@@ -465,7 +465,14 @@ export class BootcApiImpl implements BootcApi {
       throw new Error(`VM '${name}' is not running or does not exist`);
     }
 
-    const privateKey = fs.readFileSync(vm.IdentityPath);
+    if (!vm.RemoteUsername) {
+      throw new Error(`VM '${name}' has no remote username configured`);
+    }
+
+    // macadam may return paths with a ~/ prefix; Node.js does not expand this
+    // automatically — apply the same resolution used in MacadamHandler.createVm.
+    const resolvedKeyPath = vm.IdentityPath.replace(/^~\//, `${process.env.HOME}/`);
+    const privateKey = fs.readFileSync(resolvedKeyPath);
 
     return new Promise<void>((resolve, reject) => {
       this.sshClient = new SSHClient();
