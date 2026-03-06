@@ -23,6 +23,7 @@ import { BootcApiImpl } from './api-impl';
 import * as podmanDesktopApi from '@podman-desktop/api';
 import type * as macadam from '@crc-org/macadam.js';
 import { MacadamHandler } from './macadam';
+import { Messages } from '/@shared/src/messages/Messages';
 
 const TELEMETRY_LOGGER_MOCK: podmanDesktopApi.TelemetryLogger = {
   logUsage: vi.fn(),
@@ -33,6 +34,7 @@ vi.mock('node:fs', async importOriginal => {
   return {
     ...(actual as object),
     readFileSync: vi.fn().mockReturnValue(Buffer.from('fake-private-key')),
+    existsSync: vi.fn().mockReturnValue(true),
   };
 });
 
@@ -43,6 +45,7 @@ vi.mock(
       window: {
         showErrorMessage: vi.fn(),
         showOpenDialog: vi.fn(),
+        showInputBox: vi.fn(),
       },
       containerEngine: {
         listImages: vi.fn(),
@@ -75,12 +78,12 @@ vi.mock(
 );
 
 // Stateful SSH mock: .on() stores callbacks and returns `this` for chaining,
-// .connect() fires 'ready', .shell() provides a mock stream.
-// Defined inside the vi.mock factory because it is hoisted.
+// .connect() invokes the authHandler from connect options, .shell() provides a mock stream.
 const mockStreamWrite = vi.fn();
 const mockStreamClose = vi.fn();
 const mockClientEnd = vi.fn();
 const mockClientDestroy = vi.fn();
+const mockAuthCallback = vi.fn();
 
 vi.mock('ssh2', () => ({
   Client: class MockSSHClient {
@@ -96,8 +99,20 @@ vi.mock('ssh2', () => ({
       return this;
     }
 
-    connect(): void {
-      this.#handlers['ready']?.();
+    connect(config?: Record<string, unknown>): void {
+      const authHandler = config?.authHandler as ((...args: unknown[]) => void) | undefined;
+      if (authHandler) {
+        authHandler([], false, (method: unknown) => {
+          mockAuthCallback(method);
+          if (method === false) {
+            this.#handlers['error']?.(new Error('All configured authentication methods failed'));
+            return;
+          }
+          this.#handlers['ready']?.();
+        });
+      } else {
+        this.#handlers['ready']?.();
+      }
     }
 
     shell(cb: (err: Error | undefined, stream: unknown) => void): void {
@@ -109,8 +124,13 @@ vi.mock('ssh2', () => ({
   },
 }));
 
-beforeEach(() => {
+beforeEach(async () => {
   vi.resetAllMocks();
+  // Re-apply defaults cleared by resetAllMocks so key-based auth tests
+  // continue to find a valid key file without per-test setup.
+  const fsModule = await import('node:fs');
+  (fsModule.readFileSync as ReturnType<typeof vi.fn>).mockReturnValue(Buffer.from('fake-private-key'));
+  (fsModule.existsSync as ReturnType<typeof vi.fn>).mockReturnValue(true);
 });
 
 function createAPI(): BootcApiImpl {
@@ -369,4 +389,58 @@ test('closeVMTerminal closes stream and client without stopping the VM', async (
   mockStreamWrite.mockClear();
   await apiImpl.writeToVMTerminal('after-close');
   expect(mockStreamWrite).not.toHaveBeenCalled();
+});
+
+test('openVMTerminal falls back to password auth when no key file exists', async () => {
+  const mockVm = {
+    Name: 'test-vm',
+    Running: true,
+    Port: 2222,
+    RemoteUsername: 'root',
+    IdentityPath: '',
+  } as macadam.VmDetails;
+
+  vi.spyOn(MacadamHandler.prototype, 'listVms').mockResolvedValue([mockVm]);
+  // eslint-disable-next-line sonarjs/no-hardcoded-passwords
+  vi.mocked(podmanDesktopApi.window.showInputBox).mockResolvedValue('my-pass');
+
+  const apiImpl = createAPI();
+  await apiImpl.openVMTerminal('test-vm');
+
+  expect(podmanDesktopApi.window.showInputBox).toHaveBeenCalledWith({
+    title: 'VM Authentication',
+    prompt: 'Password for root@localhost',
+    password: true,
+  });
+  expect(mockAuthCallback).toHaveBeenCalledWith(
+    // eslint-disable-next-line sonarjs/no-hardcoded-passwords
+    expect.objectContaining({ type: 'password', username: 'root', password: 'my-pass' }),
+  );
+});
+
+test('openVMTerminal posts error and cleans up when user cancels password prompt', async () => {
+  const mockVm = {
+    Name: 'test-vm',
+    Running: true,
+    Port: 2222,
+    RemoteUsername: 'root',
+    IdentityPath: '',
+  } as macadam.VmDetails;
+
+  vi.spyOn(MacadamHandler.prototype, 'listVms').mockResolvedValue([mockVm]);
+  vi.mocked(podmanDesktopApi.window.showInputBox).mockResolvedValue(undefined);
+
+  const postMessageMock = vi.fn().mockResolvedValue(undefined);
+  const apiImpl = new BootcApiImpl({} as podmanDesktopApi.ExtensionContext, TELEMETRY_LOGGER_MOCK, {
+    postMessage: postMessageMock,
+  } as unknown as podmanDesktopApi.Webview);
+
+  await expect(apiImpl.openVMTerminal('test-vm')).rejects.toThrow('Authentication cancelled');
+
+  expect(postMessageMock).toHaveBeenCalledWith({
+    id: Messages.MSG_VM_TERMINAL_ERROR,
+    body: { error: 'Authentication cancelled' },
+  });
+  expect(mockClientEnd).toHaveBeenCalled();
+  expect(mockClientDestroy).toHaveBeenCalled();
 });

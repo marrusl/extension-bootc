@@ -455,7 +455,6 @@ export class BootcApiImpl implements BootcApi {
   }
 
   async openVMTerminal(name: string): Promise<void> {
-    // Close any existing session first
     this.closeVMTerminalSync();
 
     const macadam = new MacadamHandler(this.telemetryLogger);
@@ -469,22 +468,18 @@ export class BootcApiImpl implements BootcApi {
       throw new Error(`VM '${name}' has no remote username configured`);
     }
 
+    const remoteUsername = vm.RemoteUsername;
+    const port = vm.Port;
     // macadam may return paths with a ~/ prefix; Node.js does not expand this
     // automatically — apply the same resolution used in MacadamHandler.createVm.
     const resolvedKeyPath = vm.IdentityPath.replace(/^~\//, `${process.env.HOME}/`);
-    const privateKey = fs.readFileSync(resolvedKeyPath);
-
-    console.log('[VM Terminal Debug]', {
-      host: 'localhost',
-      port: vm.Port,
-      username: vm.RemoteUsername,
-      identityPath: vm.IdentityPath,
-      resolvedKeyPath: resolvedKeyPath,
-      keyLength: privateKey?.length,
-      keyStart: privateKey?.toString().substring(0, 50),
-    });
+    const hasKey = !!vm.IdentityPath && fs.existsSync(resolvedKeyPath);
+    const privateKey = hasKey ? fs.readFileSync(resolvedKeyPath) : undefined;
 
     return new Promise<void>((resolve, reject) => {
+      let triedPublickey = false;
+      let triedPassword = false;
+
       this.sshClient = new SSHClient();
       this.sshClient
         .on('ready', () => {
@@ -497,13 +492,22 @@ export class BootcApiImpl implements BootcApi {
         })
         .connect({
           host: 'localhost',
-          port: vm.Port,
-          username: vm.RemoteUsername,
-          privateKey,
-          // Fall back to the SSH agent if the key file is passphrase-protected
-          // or in a format ssh2 can't parse directly. This matches how the
-          // normal ssh CLI authenticates on macOS/Linux.
-          agent: process.env.SSH_AUTH_SOCK,
+          port,
+          username: remoteUsername,
+          authHandler: (_authsLeft, _partialSuccess, cb): void => {
+            if (hasKey && privateKey && !triedPublickey) {
+              triedPublickey = true;
+              cb({ type: 'publickey', username: remoteUsername, key: privateKey });
+              return;
+            }
+            if (!triedPassword) {
+              triedPassword = true;
+              this.promptForPassword(remoteUsername, cb, reject).catch(console.error);
+              return;
+            }
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            (cb as any)(false);
+          },
         });
     });
   }
@@ -531,6 +535,30 @@ export class BootcApiImpl implements BootcApi {
     });
 
     resolve();
+  }
+
+  private async promptForPassword(
+    remoteUsername: string,
+    cb: (method: { type: 'password'; username: string; password: string }) => void,
+    reject: (err: Error) => void,
+  ): Promise<void> {
+    try {
+      const password = await podmanDesktopApi.window.showInputBox({
+        title: 'VM Authentication',
+        prompt: `Password for ${remoteUsername}@localhost`,
+        password: true,
+      });
+      if (password === undefined) {
+        await this.notify(Messages.MSG_VM_TERMINAL_ERROR, { error: 'Authentication cancelled' });
+        this.closeVMTerminalSync();
+        reject(new Error('Authentication cancelled'));
+        return;
+      }
+      cb({ type: 'password', username: remoteUsername, password });
+    } catch (err) {
+      this.closeVMTerminalSync();
+      reject(err instanceof Error ? err : new Error(String(err)));
+    }
   }
 
   async writeToVMTerminal(data: string): Promise<void> {
