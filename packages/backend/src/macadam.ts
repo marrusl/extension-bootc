@@ -126,18 +126,33 @@ export class MacadamHandler {
 
           await this.macadam.init();
           progress.report({ increment: 10 });
-          await this.macadam.startVm({ name, containerProvider: provider });
+          try {
+            await this.macadam.startVm({ name, containerProvider: provider });
+          } catch (e: unknown) {
+            // macadam's CLI daemonizes the VM process and exits with code 125
+            // after a successful start. extensionApi.process.exec treats any
+            // non-zero exit as an error, so we get a spurious failure here.
+            // Check whether the VM is actually running before propagating.
+            const errorMessage =
+              e instanceof Error ? `${(e as StderrError).message} ${(e as StderrError).stderr ?? ''}` : String(e);
+            if (errorMessage.includes('exit code 125')) {
+              const vms = await this.macadam.listVms({});
+              const isRunning = vms.some(vm => vm.Name === name && vm.Running === true);
+              if (isRunning) {
+                // VM started successfully despite the exit code — suppress the error.
+                telemetryData.success = true;
+                progress.report({ increment: 100 });
+                return;
+              }
+            }
+            telemetryData.error = errorMessage;
+            console.error('Failed to start VM:', errorMessage);
+            throw new Error(`Error starting VM: ${errorMessage}`);
+          }
           telemetryData.success = true;
           progress.report({ increment: 100 });
         },
       )
-      .catch((e: unknown) => {
-        const errorMessage =
-          e instanceof Error ? `${(e as StderrError).message} ${(e as StderrError).stderr ?? ''}` : String(e);
-        telemetryData.error = errorMessage;
-        console.error('Failed to start VM:', errorMessage);
-        throw new Error(`Error starting VM: ${errorMessage}`);
-      })
       .finally(() => {
         this.telemetryLogger.logUsage('startVM', telemetryData);
       });

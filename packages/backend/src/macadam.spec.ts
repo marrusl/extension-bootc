@@ -268,3 +268,42 @@ test('Test removeVm with MacadamHandler on Mac resolves correct provider and nam
     provider: 'applehv',
   });
 });
+
+test('startVm suppresses exit-code-125 error when the VM is confirmed running', async () => {
+  const macadamVm = new MacadamHandler(TELEMETRY_LOGGER_MOCK);
+  const macadamInstance = (macadam.Macadam as Mock).mock.results[0].value;
+
+  // Simulate macadam daemonizing successfully but exiting with code 125
+  macadamInstance.startVm.mockRejectedValue(new Error('Command failed with exit code 125'));
+  // listVms confirms the VM is running
+  macadamInstance.listVms.mockResolvedValue([{ Name: 'test-vm', Running: true }]);
+
+  vi.spyOn(extensionApi.window, 'withProgress').mockImplementation((_options, task) => {
+    return task(progress, {} as unknown as extensionApi.CancellationToken);
+  });
+  vi.mocked(extensionApi.env).isMac = true;
+
+  // Should resolve without throwing even though startVm threw
+  await expect(macadamVm.startVm('test-vm')).resolves.toBeUndefined();
+
+  expect(TELEMETRY_LOGGER_MOCK.logUsage).toHaveBeenCalledWith('startVM', {
+    success: true,
+    provider: 'applehv',
+  });
+});
+
+test('startVm re-throws exit-code-125 error when the VM is not running', async () => {
+  const macadamVm = new MacadamHandler(TELEMETRY_LOGGER_MOCK);
+  const macadamInstance = (macadam.Macadam as Mock).mock.results[0].value;
+
+  macadamInstance.startVm.mockRejectedValue(new Error('Command failed with exit code 125'));
+  // listVms shows the VM did not actually start
+  macadamInstance.listVms.mockResolvedValue([{ Name: 'test-vm', Running: false }]);
+
+  vi.spyOn(extensionApi.window, 'withProgress').mockImplementation((_options, task) => {
+    return task(progress, {} as unknown as extensionApi.CancellationToken);
+  });
+  vi.mocked(extensionApi.env).isMac = true;
+
+  await expect(macadamVm.startVm('test-vm')).rejects.toThrow('exit code 125');
+});
