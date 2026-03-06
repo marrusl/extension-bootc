@@ -22,4 +22,7 @@ export enum Messages {
   MSG_NAVIGATE_BUILD = 'navigate-build',
   MSG_VM_LAUNCH_ERROR = 'vm-launch-error',
   MSG_VM_LIST_UPDATED = 'vm-list-updated',
+  MSG_VM_TERMINAL_DATA = 'vm-terminal-data',
+  MSG_VM_TERMINAL_CLOSED = 'vm-terminal-closed',
+  MSG_VM_TERMINAL_ERROR = 'vm-terminal-error',
 }

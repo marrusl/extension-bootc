@@ -28,6 +28,14 @@ const TELEMETRY_LOGGER_MOCK: podmanDesktopApi.TelemetryLogger = {
   logUsage: vi.fn(),
 } as unknown as podmanDesktopApi.TelemetryLogger;
 
+vi.mock('node:fs', async importOriginal => {
+  const actual = await importOriginal();
+  return {
+    ...(actual as object),
+    readFileSync: vi.fn().mockReturnValue(Buffer.from('fake-private-key')),
+  };
+});
+
 vi.mock(
   import('@podman-desktop/api'),
   () =>
@@ -65,6 +73,41 @@ vi.mock(
       ),
     }) as unknown as typeof macadam,
 );
+
+// Stateful SSH mock: .on() stores callbacks and returns `this` for chaining,
+// .connect() fires 'ready', .shell() provides a mock stream.
+// Defined inside the vi.mock factory because it is hoisted.
+const mockStreamWrite = vi.fn();
+const mockStreamClose = vi.fn();
+const mockClientEnd = vi.fn();
+const mockClientDestroy = vi.fn();
+
+vi.mock('ssh2', () => ({
+  Client: class MockSSHClient {
+    #handlers: Record<string, (...args: unknown[]) => void> = {};
+    #mockStream = {
+      write: mockStreamWrite,
+      close: mockStreamClose,
+      on: vi.fn().mockReturnThis(),
+    };
+
+    on(event: string, cb: (...args: unknown[]) => void): MockSSHClient {
+      this.#handlers[event] = cb;
+      return this;
+    }
+
+    connect(): void {
+      this.#handlers['ready']?.();
+    }
+
+    shell(cb: (err: Error | undefined, stream: unknown) => void): void {
+      cb(undefined, this.#mockStream);
+    }
+
+    end = mockClientEnd;
+    destroy = mockClientDestroy;
+  },
+}));
 
 beforeEach(() => {
   vi.resetAllMocks();
@@ -227,4 +270,80 @@ test('openImageBuild should navigate to it', async () => {
   await apiImpl.openImageBuild();
 
   expect(podmanDesktopApi.navigation.navigateToImageBuild).toHaveBeenCalledOnce();
+});
+
+test('openVMTerminal connects SSH with correct VM details', async () => {
+  const mockVm = {
+    Name: 'test-vm',
+    Running: true,
+    Port: 2222,
+    RemoteUsername: 'root',
+    IdentityPath: '/home/user/.ssh/id_ed25519',
+  } as macadam.VmDetails;
+
+  vi.spyOn(MacadamHandler.prototype, 'listVms').mockResolvedValue([mockVm]);
+
+  const fs = await import('node:fs');
+
+  const apiImpl = createAPI();
+  await apiImpl.openVMTerminal('test-vm');
+
+  // readFileSync should have been called with the identity path
+  expect(fs.readFileSync).toHaveBeenCalledWith('/home/user/.ssh/id_ed25519');
+
+  // Verify a write flows through to the mock stream
+  await apiImpl.writeToVMTerminal('test');
+  expect(mockStreamWrite).toHaveBeenCalledWith('test');
+});
+
+test('writeToVMTerminal writes to the active stream', async () => {
+  const mockVm = {
+    Name: 'test-vm',
+    Running: true,
+    Port: 2222,
+    RemoteUsername: 'root',
+    IdentityPath: '/home/user/.ssh/id_ed25519',
+  } as macadam.VmDetails;
+
+  vi.spyOn(MacadamHandler.prototype, 'listVms').mockResolvedValue([mockVm]);
+
+  const apiImpl = createAPI();
+  await apiImpl.openVMTerminal('test-vm');
+
+  await apiImpl.writeToVMTerminal('ls -la\n');
+
+  expect(mockStreamWrite).toHaveBeenCalledWith('ls -la\n');
+});
+
+test('writeToVMTerminal is a no-op when no session exists', async () => {
+  const apiImpl = createAPI();
+  await apiImpl.writeToVMTerminal('hello');
+
+  expect(mockStreamWrite).not.toHaveBeenCalled();
+});
+
+test('closeVMTerminal closes stream and client without stopping the VM', async () => {
+  const mockVm = {
+    Name: 'test-vm',
+    Running: true,
+    Port: 2222,
+    RemoteUsername: 'root',
+    IdentityPath: '/home/user/.ssh/id_ed25519',
+  } as macadam.VmDetails;
+
+  vi.spyOn(MacadamHandler.prototype, 'listVms').mockResolvedValue([mockVm]);
+
+  const apiImpl = createAPI();
+  await apiImpl.openVMTerminal('test-vm');
+
+  await apiImpl.closeVMTerminal();
+
+  expect(mockStreamClose).toHaveBeenCalled();
+  expect(mockClientEnd).toHaveBeenCalled();
+  expect(mockClientDestroy).toHaveBeenCalled();
+
+  // Subsequent write should be a no-op (references cleared)
+  mockStreamWrite.mockClear();
+  await apiImpl.writeToVMTerminal('after-close');
+  expect(mockStreamWrite).not.toHaveBeenCalled();
 });

@@ -33,11 +33,17 @@ import { createVMManager, stopCurrentVM } from './vm-manager';
 import examplesCatalog from '../assets/examples.json';
 import type { ExamplesList } from '/@shared/src/models/examples';
 import { MacadamHandler } from './macadam';
+import type { ClientChannel } from 'ssh2';
+import { Client as SSHClient } from 'ssh2';
 
 export class BootcApiImpl implements BootcApi {
   static readonly CHANNEL: string = 'BootcApi';
   private history: History;
   private webview: podmanDesktopApi.Webview;
+
+  // Single active SSH terminal session
+  private sshClient: SSHClient | undefined;
+  private sshStream: ClientChannel | undefined;
 
   constructor(
     private readonly extensionContext: podmanDesktopApi.ExtensionContext,
@@ -446,6 +452,80 @@ export class BootcApiImpl implements BootcApi {
       console.error('Error getting configuration, will return undefined: ', err);
     }
     return undefined;
+  }
+
+  async openVMTerminal(name: string): Promise<void> {
+    // Close any existing session first
+    this.closeVMTerminalSync();
+
+    const macadam = new MacadamHandler(this.telemetryLogger);
+    const vms = await macadam.listVms();
+    const vm = vms.find(v => v.Name === name && v.Running === true);
+    if (!vm) {
+      throw new Error(`VM '${name}' is not running or does not exist`);
+    }
+
+    const privateKey = fs.readFileSync(vm.IdentityPath);
+
+    return new Promise<void>((resolve, reject) => {
+      this.sshClient = new SSHClient();
+      this.sshClient
+        .on('ready', () => {
+          this.sshClient!.shell((err, stream) => this.handleShellReady(err, stream, resolve, reject));
+        })
+        .on('error', (err: Error) => {
+          this.notify(Messages.MSG_VM_TERMINAL_ERROR, { error: err.message }).catch(console.error);
+          this.closeVMTerminalSync();
+          reject(err);
+        })
+        .connect({
+          host: 'localhost',
+          port: vm.Port,
+          username: vm.RemoteUsername,
+          privateKey,
+        });
+    });
+  }
+
+  private handleShellReady(
+    err: Error | undefined,
+    stream: ClientChannel,
+    resolve: () => void,
+    reject: (err: Error) => void,
+  ): void {
+    if (err) {
+      this.notify(Messages.MSG_VM_TERMINAL_ERROR, { error: err.message }).catch(console.error);
+      reject(err);
+      return;
+    }
+    this.sshStream = stream;
+
+    stream.on('data', (data: Buffer) => {
+      this.notify(Messages.MSG_VM_TERMINAL_DATA, { data: data.toString() }).catch(console.error);
+    });
+
+    stream.on('close', () => {
+      this.notify(Messages.MSG_VM_TERMINAL_CLOSED, {}).catch(console.error);
+      this.closeVMTerminalSync();
+    });
+
+    resolve();
+  }
+
+  async writeToVMTerminal(data: string): Promise<void> {
+    this.sshStream?.write(data);
+  }
+
+  async closeVMTerminal(): Promise<void> {
+    this.closeVMTerminalSync();
+  }
+
+  private closeVMTerminalSync(): void {
+    this.sshStream?.close();
+    this.sshClient?.end();
+    this.sshClient?.destroy();
+    this.sshStream = undefined;
+    this.sshClient = undefined;
   }
 
   // Read from the podman desktop clipboard
