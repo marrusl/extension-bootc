@@ -28,6 +28,9 @@ export abstract class BootcApi {
   abstract launchVM(buildId: string): Promise<void>;
   abstract createVM(options: CreateVmOptions): Promise<void>;
   abstract listVMs(): Promise<VmDetails[]>;
+  abstract startVM(name: string): Promise<void>;
+  abstract stopVM(name: string): Promise<void>;
+  abstract deleteVM(name: string): Promise<void>;
   abstract buildExists(folder: string, types: BuildType[]): Promise<boolean>;
   abstract buildImage(build: BootcBuildInfo, overwrite?: boolean): Promise<void>;
   abstract pullImage(image: string, arch?: string): Promise<void>;

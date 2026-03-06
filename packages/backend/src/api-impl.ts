@@ -84,6 +84,21 @@ export class BootcApiImpl implements BootcApi {
     return await macadam.listVms();
   }
 
+  async startVM(name: string): Promise<void> {
+    const macadam = new MacadamHandler(this.telemetryLogger);
+    await macadam.startVm(name);
+  }
+
+  async stopVM(name: string): Promise<void> {
+    const macadam = new MacadamHandler(this.telemetryLogger);
+    await macadam.stopVm(name);
+  }
+
+  async deleteVM(name: string): Promise<void> {
+    const macadam = new MacadamHandler(this.telemetryLogger);
+    await macadam.removeVm(name);
+  }
+
   async launchVM(buildId: string): Promise<void> {
     try {
       const build = this.history.getHistory().find(build => build.id === buildId);

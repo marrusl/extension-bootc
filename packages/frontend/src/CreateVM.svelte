@@ -2,11 +2,11 @@
 import { onMount } from 'svelte';
 import { Button, EmptyScreen, ErrorMessage, FormPage, Input } from '@podman-desktop/ui-svelte';
 import Link from './lib/Link.svelte';
-import { faCheck, faTriangleExclamation } from '@fortawesome/free-solid-svg-icons';
+import { faTriangleExclamation } from '@fortawesome/free-solid-svg-icons';
 import { goToDiskImages } from './lib/navigation';
-import { cleanup } from '@testing-library/svelte';
 import DiskImageIcon from './lib/DiskImageIcon.svelte';
 import { bootcClient } from './api/client';
+import { router } from 'tinro';
 import type { VmDetails } from '@crc-org/macadam.js';
 
 interface Props {
@@ -19,7 +19,6 @@ let { imageName, imagePath }: Props = $props();
 let errorFormValidation = $state('');
 let createInProgress = $state(false);
 let createErrorMessage = $state('');
-let createSuccessMessage = $state('');
 let sshPrivateKeyLocation = $state('');
 let sshUsername = $state('');
 let virtualMachineName = $state('');
@@ -122,7 +121,7 @@ async function createVM(): Promise<void> {
       username: sshUsername,
       sshIdentityPath: sshPrivateKeyLocation,
     });
-    createSuccessMessage = 'Virtual machine created successfully.';
+    router.goto('/virtual-machines');
   } catch (error) {
     createErrorMessage = 'An error occurred while creating the virtual machine. Error: ' + error;
   } finally {
@@ -152,21 +151,6 @@ async function createVM(): Promise<void> {
         <Button
           class="py-3"
           on:click={(): void => {
-            cleanup();
-            goToDiskImages();
-          }}>
-          Go back
-        </Button>
-      </EmptyScreen>
-    {:else if createSuccessMessage}
-      <EmptyScreen icon={faCheck} title="Virtual machine created" message={createSuccessMessage}>
-        <p class="text-md text-[var(--pd-content-text)] pb-2 ">
-          Your virtual machine is ready to use in <Link action={bootcClient.openResources}>Settings &gt; Resources</Link>.
-        </p>
-        <Button
-          class="py-3"
-          on:click={(): void => {
-            cleanup();
             goToDiskImages();
           }}>
           Go back

@@ -20,6 +20,7 @@ let { meta }: Props = $props();
     <SettingsNavItem title="Dashboard" selected={meta.url === '/'} href="/" />
     <SettingsNavItem title="Images" selected={meta.url.startsWith('/images')} href="/images" />
     <SettingsNavItem title="Disk Images" selected={meta.url.startsWith('/disk-image')} href="/disk-images" />
+    <SettingsNavItem title="Virtual Machines" selected={meta.url.startsWith('/virtual-machines')} href="/virtual-machines" />
     <SettingsNavItem title="Examples" selected={meta.url.startsWith('/examples')} href="/examples" />
   </div>
 </nav>

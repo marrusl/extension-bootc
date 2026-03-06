@@ -21,4 +21,5 @@ export enum Messages {
   MSG_HISTORY_UPDATE = 'history-update',
   MSG_NAVIGATE_BUILD = 'navigate-build',
   MSG_VM_LAUNCH_ERROR = 'vm-launch-error',
+  MSG_VM_LIST_UPDATED = 'vm-list-updated',
 }

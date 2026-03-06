@@ -175,7 +175,7 @@ export async function activate(extensionContext: ExtensionContext): Promise<void
 
     // Register listener to start monitoring when macadam is initialized
     macadamEvents.on(MACADAM_INITIALIZED_EVENT, () => {
-      monitorMachines(provider, extensionContext).catch((error: unknown) => {
+      monitorMachines(provider, extensionContext, panel).catch((error: unknown) => {
         console.error('Error while monitoring machines', error);
       });
     });
@@ -423,7 +423,11 @@ async function registerProviderFor(
   currentConnections.set(machineInfo.image, disposable);
 }
 
-async function updateMachines(provider: extensionApi.Provider, context: extensionApi.ExtensionContext): Promise<void> {
+async function updateMachines(
+  provider: extensionApi.Provider,
+  context: extensionApi.ExtensionContext,
+  panel: extensionApi.WebviewPanel,
+): Promise<void> {
   // init machines available
   const machineListOutput = await getJSONMachineList();
 
@@ -434,6 +438,8 @@ async function updateMachines(provider: extensionApi.Provider, context: extensio
 
   // parse output
   const machines = machineListOutput.list;
+
+  let vmListChanged = false;
 
   // update status of existing machines - in the POC only one can exist, just to keep code that can be reused in future
   for (const machine of machines) {
@@ -451,6 +457,7 @@ async function updateMachines(provider: extensionApi.Provider, context: extensio
       // notify status change
       listeners.forEach(listener => listener(machine.Image, status));
       macadamMachinesStatuses.set(machine.Image, status);
+      vmListChanged = true;
     }
 
     // TODO update cpu/memory/disk usage
@@ -476,6 +483,9 @@ async function updateMachines(provider: extensionApi.Provider, context: extensio
   const machinesToRemove = Array.from(macadamMachinesStatuses.keys()).filter(
     machine => !machines.find(m => m.Image === machine),
   );
+  if (machinesToRemove.length > 0) {
+    vmListChanged = true;
+  }
   machinesToRemove.forEach(machine => {
     macadamMachinesStatuses.delete(machine);
   });
@@ -484,6 +494,9 @@ async function updateMachines(provider: extensionApi.Provider, context: extensio
   const connectionsToCreate = Array.from(macadamMachinesStatuses.keys()).filter(
     machineStatusKey => !currentConnections.has(machineStatusKey),
   );
+  if (connectionsToCreate.length > 0) {
+    vmListChanged = true;
+  }
   await Promise.all(
     connectionsToCreate.map(async machineName => {
       const podmanMachineInfo = macadamMachinesInfo.get(machineName);
@@ -501,6 +514,14 @@ async function updateMachines(provider: extensionApi.Provider, context: extensio
       currentConnections.delete(machine);
     }
   });
+
+  // Broadcast to the webview when any VM was added, removed, or changed status
+  if (vmListChanged) {
+    await panel.webview.postMessage({
+      id: Messages.MSG_VM_LIST_UPDATED,
+      body: {},
+    });
+  }
 
   // If the machine length is zero and we are on macOS or Windows,
   // we will update the provider as being 'installed', or ready / starting / configured if there is a machine
@@ -545,17 +566,21 @@ async function timeout(time: number): Promise<void> {
   });
 }
 
-async function monitorMachines(provider: extensionApi.Provider, context: extensionApi.ExtensionContext): Promise<void> {
+async function monitorMachines(
+  provider: extensionApi.Provider,
+  context: extensionApi.ExtensionContext,
+  panel: extensionApi.WebviewPanel,
+): Promise<void> {
   // call us again
   if (!stopLoop) {
     try {
-      await updateMachines(provider, context);
+      await updateMachines(provider, context, panel);
     } catch (error) {
       // ignore the update of machines
       console.warn('Error updating machines', error);
     }
     await timeout(5000);
-    monitorMachines(provider, context).catch((error: unknown) => {
+    monitorMachines(provider, context, panel).catch((error: unknown) => {
       console.error('Error monitoring machines', error);
     });
   }

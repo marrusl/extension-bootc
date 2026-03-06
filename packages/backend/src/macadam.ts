@@ -103,4 +103,100 @@ export class MacadamHandler {
       throw new Error(`Error listing VMs: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
+
+  private async resolveProvider(): Promise<'wsl' | 'hyperv' | 'applehv' | undefined> {
+    if (extensionApi.env.isWindows) {
+      return (await isWSLEnabled()) ? 'wsl' : 'hyperv';
+    } else if (extensionApi.env.isMac) {
+      return 'applehv';
+    }
+    return undefined;
+  }
+
+  async startVm(name: string): Promise<void> {
+    const telemetryData: Record<string, unknown> = {};
+
+    await extensionApi.window
+      .withProgress(
+        { location: extensionApi.ProgressLocation.TASK_WIDGET, title: `Starting Virtual Machine ${name}` },
+        async progress => {
+          await ensureMacadamInitialized(true);
+          const provider = await this.resolveProvider();
+          telemetryData.provider = provider;
+
+          progress.report({ increment: 10 });
+          await this.macadam.startVm({ name, containerProvider: provider });
+          telemetryData.success = true;
+          progress.report({ increment: 100 });
+        },
+      )
+      .catch((e: unknown) => {
+        const errorMessage =
+          e instanceof Error ? `${(e as StderrError).message} ${(e as StderrError).stderr ?? ''}` : String(e);
+        telemetryData.error = errorMessage;
+        console.error('Failed to start VM:', errorMessage);
+        throw new Error(`Error starting VM: ${errorMessage}`);
+      })
+      .finally(() => {
+        this.telemetryLogger.logUsage('startVM', telemetryData);
+      });
+  }
+
+  async stopVm(name: string): Promise<void> {
+    const telemetryData: Record<string, unknown> = {};
+
+    await extensionApi.window
+      .withProgress(
+        { location: extensionApi.ProgressLocation.TASK_WIDGET, title: `Stopping Virtual Machine ${name}` },
+        async progress => {
+          await ensureMacadamInitialized(true);
+          const provider = await this.resolveProvider();
+          telemetryData.provider = provider;
+
+          progress.report({ increment: 10 });
+          await this.macadam.stopVm({ name, containerProvider: provider });
+          telemetryData.success = true;
+          progress.report({ increment: 100 });
+        },
+      )
+      .catch((e: unknown) => {
+        const errorMessage =
+          e instanceof Error ? `${(e as StderrError).message} ${(e as StderrError).stderr ?? ''}` : String(e);
+        telemetryData.error = errorMessage;
+        console.error('Failed to stop VM:', errorMessage);
+        throw new Error(`Error stopping VM: ${errorMessage}`);
+      })
+      .finally(() => {
+        this.telemetryLogger.logUsage('stopVM', telemetryData);
+      });
+  }
+
+  async removeVm(name: string): Promise<void> {
+    const telemetryData: Record<string, unknown> = {};
+
+    await extensionApi.window
+      .withProgress(
+        { location: extensionApi.ProgressLocation.TASK_WIDGET, title: `Deleting Virtual Machine ${name}` },
+        async progress => {
+          await ensureMacadamInitialized(true);
+          const provider = await this.resolveProvider();
+          telemetryData.provider = provider;
+
+          progress.report({ increment: 10 });
+          await this.macadam.removeVm({ name, containerProvider: provider });
+          telemetryData.success = true;
+          progress.report({ increment: 100 });
+        },
+      )
+      .catch((e: unknown) => {
+        const errorMessage =
+          e instanceof Error ? `${(e as StderrError).message} ${(e as StderrError).stderr ?? ''}` : String(e);
+        telemetryData.error = errorMessage;
+        console.error('Failed to delete VM:', errorMessage);
+        throw new Error(`Error deleting VM: ${errorMessage}`);
+      })
+      .finally(() => {
+        this.telemetryLogger.logUsage('deleteVM', telemetryData);
+      });
+  }
 }

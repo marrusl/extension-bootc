@@ -180,14 +180,21 @@ test('Test startVm with MacadamHandler on Mac resolves correct provider and name
   const macadamVm = new MacadamHandler(TELEMETRY_LOGGER_MOCK);
   const macadamInstance = (macadam.Macadam as Mock).mock.results[0].value;
   macadamInstance.startVm.mockResolvedValue(undefined);
+
+  vi.spyOn(extensionApi.window, 'withProgress').mockImplementation((_options, task) => {
+    return task(progress, {} as unknown as extensionApi.CancellationToken);
+  });
   vi.mocked(extensionApi.env).isMac = true;
 
   await macadamVm.startVm('test-vm');
 
-  expect(macadamInstance.init).toHaveBeenCalled();
   expect(macadamInstance.startVm).toHaveBeenCalledWith({
     name: 'test-vm',
     containerProvider: 'applehv',
+  });
+  expect(TELEMETRY_LOGGER_MOCK.logUsage).toHaveBeenCalledWith('startVM', {
+    success: true,
+    provider: 'applehv',
   });
 });
 
@@ -195,14 +202,21 @@ test('Test stopVm with MacadamHandler on Mac resolves correct provider and name'
   const macadamVm = new MacadamHandler(TELEMETRY_LOGGER_MOCK);
   const macadamInstance = (macadam.Macadam as Mock).mock.results[0].value;
   macadamInstance.stopVm.mockResolvedValue(undefined);
+
+  vi.spyOn(extensionApi.window, 'withProgress').mockImplementation((_options, task) => {
+    return task(progress, {} as unknown as extensionApi.CancellationToken);
+  });
   vi.mocked(extensionApi.env).isMac = true;
 
   await macadamVm.stopVm('test-vm');
 
-  expect(macadamInstance.init).toHaveBeenCalled();
   expect(macadamInstance.stopVm).toHaveBeenCalledWith({
     name: 'test-vm',
     containerProvider: 'applehv',
+  });
+  expect(TELEMETRY_LOGGER_MOCK.logUsage).toHaveBeenCalledWith('stopVM', {
+    success: true,
+    provider: 'applehv',
   });
 });
 
@@ -210,13 +224,20 @@ test('Test removeVm with MacadamHandler on Mac resolves correct provider and nam
   const macadamVm = new MacadamHandler(TELEMETRY_LOGGER_MOCK);
   const macadamInstance = (macadam.Macadam as Mock).mock.results[0].value;
   macadamInstance.removeVm.mockResolvedValue(undefined);
+
+  vi.spyOn(extensionApi.window, 'withProgress').mockImplementation((_options, task) => {
+    return task(progress, {} as unknown as extensionApi.CancellationToken);
+  });
   vi.mocked(extensionApi.env).isMac = true;
 
   await macadamVm.removeVm('test-vm');
 
-  expect(macadamInstance.init).toHaveBeenCalled();
   expect(macadamInstance.removeVm).toHaveBeenCalledWith({
     name: 'test-vm',
     containerProvider: 'applehv',
+  });
+  expect(TELEMETRY_LOGGER_MOCK.logUsage).toHaveBeenCalledWith('deleteVM', {
+    success: true,
+    provider: 'applehv',
   });
 });

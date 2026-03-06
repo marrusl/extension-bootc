@@ -25,6 +25,14 @@ import CreateVM from './CreateVM.svelte';
 import type { Subscriber } from '/@shared/src/messages/MessageProxy';
 import { bootcClient } from './api/client';
 import type { VmDetails } from '@crc-org/macadam.js';
+import { router } from 'tinro';
+
+vi.mock('tinro', () => ({
+  router: {
+    goto: vi.fn(),
+    mode: { hash: vi.fn() },
+  },
+}));
 
 vi.mock('./api/client', async () => {
   return {
@@ -153,6 +161,21 @@ test('Clicking Create with empty fields surfaces a validation error message', as
 
   await vi.waitFor(() => {
     expect(screen.getByText(/An image file path is required/)).toBeInTheDocument();
+  });
+});
+
+test('Successful creation navigates to the Virtual Machines view', async () => {
+  vi.mocked(bootcClient.createVM).mockResolvedValue(undefined);
+
+  render(CreateVM, { imageName: 'foobar', imagePath: '/path/to/image.qcow2' });
+
+  const createButton = screen.getByRole('button', { name: 'Create Virtual Machine' });
+  expect(createButton).toBeEnabled();
+
+  createButton.click();
+
+  await vi.waitFor(() => {
+    expect(router.goto).toHaveBeenCalledWith('/virtual-machines');
   });
 });
 
