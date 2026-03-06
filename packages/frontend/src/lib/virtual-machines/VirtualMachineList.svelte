@@ -10,8 +10,9 @@ import type { BootcBuildInfo } from '/@shared/src/models/bootc';
 import type { Subscriber } from '/@shared/src/messages/MessageProxy';
 import type { Unsubscriber } from 'svelte/store';
 import Fa from 'svelte-fa';
-import { faCopy, faCheck, faPlay, faStop, faTrash } from '@fortawesome/free-solid-svg-icons';
+import { faCopy, faCheck, faPlay, faStop, faTrash, faTerminal } from '@fortawesome/free-solid-svg-icons';
 import DiskImageIcon from '/@/lib/DiskImageIcon.svelte';
+import { router } from 'tinro';
 
 let vms = $state<VmDetails[]>([]);
 let errorMessage = $state('');
@@ -27,7 +28,8 @@ let confirmingDelete = $state<Record<string, boolean>>({});
 // Per-card copy feedback state
 let copiedSsh = $state<Record<string, boolean>>({});
 
-// Resolve the source OCI image label for each VM
+// Resolve the source OCI image label and matching build for each VM.
+// Both use the same join: VmDetails.Image starts with build.folder.
 let vmImageLabels = $derived.by(() => {
   const labels: Record<string, string> = {};
   for (const vm of vms) {
@@ -35,6 +37,14 @@ let vmImageLabels = $derived.by(() => {
     labels[vm.Name] = match ? `${match.image}:${match.tag}` : vm.Image;
   }
   return labels;
+});
+
+let vmMatchingBuilds = $derived.by(() => {
+  const result: Record<string, BootcBuildInfo | undefined> = {};
+  for (const vm of vms) {
+    result[vm.Name] = builds.find(b => vm.Image.startsWith(b.folder));
+  }
+  return result;
 });
 
 async function loadVMs(): Promise<void> {
@@ -83,15 +93,25 @@ async function deleteVM(name: string): Promise<void> {
 }
 
 async function copySshCommand(name: string, port: number, user: string): Promise<void> {
+  const command = `ssh -p ${port} ${user}@localhost`;
   try {
-    await navigator.clipboard.writeText(`ssh -p ${port} ${user}@localhost`);
-    copiedSsh[name] = true;
-    setTimeout(() => {
-      copiedSsh[name] = false;
-    }, 2000);
-  } catch (e) {
-    console.error('Failed to copy SSH command:', e);
+    // navigator.clipboard requires a secure context; fall back to the
+    // textarea + execCommand approach which works in all webview contexts.
+    await navigator.clipboard.writeText(command);
+  } catch {
+    const el = document.createElement('textarea');
+    el.value = command;
+    el.style.position = 'fixed';
+    el.style.opacity = '0';
+    document.body.appendChild(el);
+    el.select();
+    document.execCommand('copy');
+    document.body.removeChild(el);
   }
+  copiedSsh[name] = true;
+  setTimeout(() => {
+    copiedSsh[name] = false;
+  }, 2000);
 }
 
 onMount(async () => {
@@ -171,6 +191,7 @@ onDestroy(() => {
               <span class="text-[var(--pd-status-connected)] font-medium">SSH:</span>
               <code class="font-mono select-all text-[var(--pd-label-text)]">ssh -p {vm.Port} {vm.RemoteUsername}@localhost</code>
               <button
+                type="button"
                 class="ml-auto p-1 rounded cursor-pointer hover:opacity-80"
                 title={copiedSsh[vm.Name] ? 'Copied!' : 'Copy to clipboard'}
                 onclick={(): Promise<void> => copySshCommand(vm.Name, vm.Port, vm.RemoteUsername)}>
@@ -191,6 +212,13 @@ onDestroy(() => {
               {/if}
               {#if status === 'running'}
                 <Button on:click={(): Promise<void> => stopVM(vm.Name)} icon={faStop} title="Stop VM">Stop</Button>
+                {#if vmMatchingBuilds[vm.Name]}
+                  {@const build = vmMatchingBuilds[vm.Name]}
+                  <Button
+                    on:click={(): void => { router.goto(`/disk-image/${btoa(build.id)}/vm`); }}
+                    icon={faTerminal}
+                    title="Open terminal">Terminal</Button>
+                {/if}
               {/if}
               <Button
                 on:click={(): void => { confirmingDelete[vm.Name] = true; }}
