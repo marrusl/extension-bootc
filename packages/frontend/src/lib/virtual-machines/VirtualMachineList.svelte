@@ -56,6 +56,13 @@ function vmStatus(vm: VmDetails): 'running' | 'starting' | 'stopped' {
   return 'stopped';
 }
 
+function vmHypervisorLabel(vmType: string): string {
+  if (vmType === 'applehv') return 'Apple Hypervisor';
+  if (vmType === 'hyperv') return 'Hyper-V';
+  if (vmType === 'wsl') return 'WSL2';
+  return vmType;
+}
+
 async function startVM(name: string): Promise<void> {
   try {
     await bootcClient.startVM(name);
@@ -153,23 +160,22 @@ onDestroy(() => {
       {#each vms as vm (vm.Name)}
         {@const status = vmStatus(vm)}
         <div class="flex flex-col gap-3 p-4 rounded-lg bg-[var(--pd-content-card-bg)] text-[var(--pd-content-card-text)]">
-          <!-- Top row: name + status -->
-          <div class="flex items-center justify-between">
+          <!-- Top row: status badge + name -->
+          <div class="flex items-center gap-2">
+            {#if status === 'running'}
+              <span class="rounded-full px-2 py-0.5 text-xs font-semibold bg-[var(--pd-status-connected)] text-white">Running</span>
+            {:else if status === 'starting'}
+              <span class="rounded-full px-2 py-0.5 text-xs font-semibold bg-[var(--pd-status-degraded)] text-gray-900 flex items-center gap-1">Starting <Spinner size="0.75em" /></span>
+            {:else}
+              <span class="rounded-full px-2 py-0.5 text-xs font-semibold bg-[var(--pd-status-not-running)] text-white">Stopped</span>
+            {/if}
             <span class="text-base font-semibold text-[var(--pd-content-card-header-text)]">{vm.Name}</span>
-            <div class="flex items-center gap-2 text-sm">
-              {#if status === 'running'}
-                <div class="w-2.5 h-2.5 rounded-full bg-[var(--pd-status-connected)]"></div>
-                <span class="text-[var(--pd-status-connected)]">Running</span>
-              {:else if status === 'starting'}
-                <div class="w-2.5 h-2.5 rounded-full bg-[var(--pd-status-degraded)]"></div>
-                <span class="text-[var(--pd-status-degraded)]">Starting</span>
-                <Spinner size="1em" />
-              {:else}
-                <div class="w-2.5 h-2.5 rounded-full bg-[var(--pd-status-not-running)]"></div>
-                <span class="text-[var(--pd-label-text)]">Stopped</span>
-              {/if}
-            </div>
           </div>
+
+          <!-- Hypervisor type -->
+          {#if vm.VMType}
+            <div class="text-xs text-[var(--pd-content-text-secondary)]">{vmHypervisorLabel(vm.VMType)}</div>
+          {/if}
 
           <!-- Source image -->
           <div class="text-sm text-[var(--pd-label-text)]">

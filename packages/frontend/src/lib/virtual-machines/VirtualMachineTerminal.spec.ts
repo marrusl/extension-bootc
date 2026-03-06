@@ -120,3 +120,48 @@ test('MSG_VM_TERMINAL_CLOSED subscription writes a close message to the terminal
 
   expect(mocks.terminalWrite).toHaveBeenCalledWith(expect.stringContaining('Connection closed.'));
 });
+
+test('password auth success — openVMTerminal resolves and terminal is ready', async () => {
+  // clearAllMocks() does not reset implementations, so explicitly resolve here
+  // in case a prior test left openVMTerminal rejecting.
+  vi.mocked(bootcClient.openVMTerminal).mockResolvedValue(undefined);
+
+  render(VirtualMachineTerminal, { name: 'test-vm' });
+
+  await waitFor(() => {
+    expect(bootcClient.openVMTerminal).toHaveBeenCalledWith('test-vm');
+  });
+
+  // "Connecting..." screen should be gone and no error screen shown
+  expect(screen.queryByText('Connecting...')).not.toBeInTheDocument();
+  expect(screen.queryByText('Connection failed')).not.toBeInTheDocument();
+});
+
+test('auth cancelled — MSG_VM_TERMINAL_ERROR with Authentication cancelled is written to terminal', async () => {
+  // The backend resolves openVMTerminal after posting the error message;
+  // the frontend receives MSG_VM_TERMINAL_ERROR and writes it to the terminal.
+  render(VirtualMachineTerminal, { name: 'test-vm' });
+
+  await waitFor(() => {
+    expect(bootcClient.openVMTerminal).toHaveBeenCalled();
+  });
+
+  expect(subscriptionCallbacks[Messages.MSG_VM_TERMINAL_ERROR]).toBeDefined();
+
+  subscriptionCallbacks[Messages.MSG_VM_TERMINAL_ERROR]({ error: 'Authentication cancelled' });
+
+  expect(mocks.terminalWrite).toHaveBeenCalledWith(expect.stringContaining('Authentication cancelled'));
+});
+
+test('auth failed — openVMTerminal rejects and EmptyScreen shows the error message', async () => {
+  vi.mocked(bootcClient.openVMTerminal).mockRejectedValue(new Error('All configured authentication methods failed'));
+
+  render(VirtualMachineTerminal, { name: 'test-vm' });
+
+  await waitFor(() => {
+    expect(screen.getByText('All configured authentication methods failed')).toBeInTheDocument();
+  });
+
+  // The connection-failed title should also be present
+  expect(screen.getByText('Connection failed')).toBeInTheDocument();
+});
