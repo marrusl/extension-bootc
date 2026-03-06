@@ -23,10 +23,13 @@ let resizeObserver = $state<ResizeObserver>();
 let connecting = $state(true);
 let connectError = $state('');
 let sessionEnded = $state(false);
+let collectingPassword = $state(false);
+let passwordBuffer = $state('');
 
 let dataSubscriber = $state<Subscriber>();
 let closedSubscriber = $state<Subscriber>();
 let errorSubscriber = $state<Subscriber>();
+let passwordSubscriber = $state<Subscriber>();
 
 async function initTerminal(): Promise<void> {
   if (!termDiv) return;
@@ -51,10 +54,31 @@ async function initTerminal(): Promise<void> {
   });
   termFit.fit();
 
-  terminal.onKey((e: { key: string }) => {
-    if (!sessionEnded) {
-      bootcClient.writeToVMTerminal(e.key).catch((err: unknown) => console.error('write error', err));
+  terminal.onKey((e: { key: string; domEvent: KeyboardEvent }) => {
+    if (sessionEnded) return;
+    if (collectingPassword) {
+      const ev = e.domEvent;
+      if (ev.key === 'Enter') {
+        bootcClient
+          .submitVMTerminalPassword(passwordBuffer)
+          .catch((err: unknown) => console.error('submit password error', err));
+        terminal?.write('\r\n');
+        collectingPassword = false;
+        passwordBuffer = '';
+      } else if (ev.key === 'Backspace') {
+        if (passwordBuffer.length > 0) {
+          passwordBuffer = passwordBuffer.slice(0, -1);
+        }
+      } else if (ev.ctrlKey && ev.key === 'c') {
+        collectingPassword = false;
+        passwordBuffer = '';
+        bootcClient.closeVMTerminal().catch((err: unknown) => console.error('close terminal error', err));
+      } else if (ev.key.length === 1 && !ev.ctrlKey && !ev.metaKey && !ev.altKey) {
+        passwordBuffer += ev.key;
+      }
+      return;
     }
+    bootcClient.writeToVMTerminal(e.key).catch((err: unknown) => console.error('write error', err));
   });
 
   terminal.attachCustomKeyEventHandler((arg: KeyboardEvent) => {
@@ -62,7 +86,9 @@ async function initTerminal(): Promise<void> {
       bootcClient
         .readFromClipboard()
         .then(text => {
-          if (!sessionEnded) {
+          if (collectingPassword) {
+            passwordBuffer += text;
+          } else if (!sessionEnded) {
             bootcClient.writeToVMTerminal(text).catch((err: unknown) => console.error('paste error', err));
           }
         })
@@ -94,6 +120,12 @@ onMount(async () => {
     terminal?.write(`\r\n\x1b[31mError: ${msg.error}\x1b[0m\r\n`);
   });
 
+  passwordSubscriber = rpcBrowser.subscribe(Messages.MSG_VM_TERMINAL_NEEDS_PASSWORD, () => {
+    terminal?.write('\r\nPassword: ');
+    collectingPassword = true;
+    passwordBuffer = '';
+  });
+
   await initTerminal();
 
   try {
@@ -111,6 +143,7 @@ onDestroy(() => {
   dataSubscriber?.unsubscribe();
   closedSubscriber?.unsubscribe();
   errorSubscriber?.unsubscribe();
+  passwordSubscriber?.unsubscribe();
 
   if (termDiv) {
     resizeObserver?.unobserve(termDiv);

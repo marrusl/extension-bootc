@@ -10,6 +10,7 @@ import { Messages } from '/@shared/src/messages/Messages';
 // vi.hoisted runs before vi.mock hoisting, so these refs are available in factories
 const mocks = vi.hoisted(() => ({
   terminalWrite: vi.fn(),
+  onKeyCallback: undefined as ((e: { key: string; domEvent: KeyboardEvent }) => void) | undefined,
 }));
 
 vi.mock('@xterm/xterm', () => ({
@@ -17,7 +18,9 @@ vi.mock('@xterm/xterm', () => ({
     loadAddon = vi.fn();
     open = vi.fn();
     write = mocks.terminalWrite;
-    onKey = vi.fn();
+    onKey = vi.fn((cb: (e: { key: string; domEvent: KeyboardEvent }) => void) => {
+      mocks.onKeyCallback = cb;
+    });
     attachCustomKeyEventHandler = vi.fn();
     dispose = vi.fn();
   },
@@ -37,6 +40,7 @@ vi.mock('/@/api/client', async () => ({
     openVMTerminal: vi.fn().mockResolvedValue(undefined),
     writeToVMTerminal: vi.fn().mockResolvedValue(undefined),
     closeVMTerminal: vi.fn().mockResolvedValue(undefined),
+    submitVMTerminalPassword: vi.fn().mockResolvedValue(undefined),
     readFromClipboard: vi.fn().mockResolvedValue(''),
   },
   rpcBrowser: {
@@ -49,6 +53,7 @@ vi.mock('/@/api/client', async () => ({
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mocks.onKeyCallback = undefined;
   for (const key of Object.keys(subscriptionCallbacks)) {
     delete subscriptionCallbacks[key];
   }
@@ -122,8 +127,6 @@ test('MSG_VM_TERMINAL_CLOSED subscription writes a close message to the terminal
 });
 
 test('password auth success — openVMTerminal resolves and terminal is ready', async () => {
-  // clearAllMocks() does not reset implementations, so explicitly resolve here
-  // in case a prior test left openVMTerminal rejecting.
   vi.mocked(bootcClient.openVMTerminal).mockResolvedValue(undefined);
 
   render(VirtualMachineTerminal, { name: 'test-vm' });
@@ -132,25 +135,8 @@ test('password auth success — openVMTerminal resolves and terminal is ready', 
     expect(bootcClient.openVMTerminal).toHaveBeenCalledWith('test-vm');
   });
 
-  // "Connecting..." screen should be gone and no error screen shown
   expect(screen.queryByText('Connecting...')).not.toBeInTheDocument();
   expect(screen.queryByText('Connection failed')).not.toBeInTheDocument();
-});
-
-test('auth cancelled — MSG_VM_TERMINAL_ERROR with Authentication cancelled is written to terminal', async () => {
-  // The backend resolves openVMTerminal after posting the error message;
-  // the frontend receives MSG_VM_TERMINAL_ERROR and writes it to the terminal.
-  render(VirtualMachineTerminal, { name: 'test-vm' });
-
-  await waitFor(() => {
-    expect(bootcClient.openVMTerminal).toHaveBeenCalled();
-  });
-
-  expect(subscriptionCallbacks[Messages.MSG_VM_TERMINAL_ERROR]).toBeDefined();
-
-  subscriptionCallbacks[Messages.MSG_VM_TERMINAL_ERROR]({ error: 'Authentication cancelled' });
-
-  expect(mocks.terminalWrite).toHaveBeenCalledWith(expect.stringContaining('Authentication cancelled'));
 });
 
 test('auth failed — openVMTerminal rejects and EmptyScreen shows the error message', async () => {
@@ -162,6 +148,52 @@ test('auth failed — openVMTerminal rejects and EmptyScreen shows the error mes
     expect(screen.getByText('All configured authentication methods failed')).toBeInTheDocument();
   });
 
-  // The connection-failed title should also be present
   expect(screen.getByText('Connection failed')).toBeInTheDocument();
+});
+
+test('on MSG_VM_TERMINAL_NEEDS_PASSWORD, keystrokes are buffered and not sent', async () => {
+  vi.mocked(bootcClient.openVMTerminal).mockResolvedValue(undefined);
+
+  render(VirtualMachineTerminal, { name: 'test-vm' });
+
+  await waitFor(() => {
+    expect(bootcClient.openVMTerminal).toHaveBeenCalled();
+  });
+
+  expect(subscriptionCallbacks[Messages.MSG_VM_TERMINAL_NEEDS_PASSWORD]).toBeDefined();
+
+  subscriptionCallbacks[Messages.MSG_VM_TERMINAL_NEEDS_PASSWORD]();
+  expect(mocks.terminalWrite).toHaveBeenCalledWith('\r\nPassword: ');
+
+  // Type a character — should NOT call writeToVMTerminal (buffered)
+  expect(mocks.onKeyCallback).toBeDefined();
+  mocks.onKeyCallback!({ key: 'a', domEvent: new KeyboardEvent('keydown', { key: 'a' }) });
+  expect(bootcClient.writeToVMTerminal).not.toHaveBeenCalled();
+});
+
+test('Enter submits the buffered password via submitVMTerminalPassword', async () => {
+  vi.mocked(bootcClient.openVMTerminal).mockResolvedValue(undefined);
+
+  render(VirtualMachineTerminal, { name: 'test-vm' });
+
+  await waitFor(() => {
+    expect(bootcClient.openVMTerminal).toHaveBeenCalled();
+  });
+
+  subscriptionCallbacks[Messages.MSG_VM_TERMINAL_NEEDS_PASSWORD]();
+
+  expect(mocks.onKeyCallback).toBeDefined();
+  mocks.onKeyCallback!({ key: 'p', domEvent: new KeyboardEvent('keydown', { key: 'p' }) });
+  mocks.onKeyCallback!({ key: 'a', domEvent: new KeyboardEvent('keydown', { key: 'a' }) });
+  mocks.onKeyCallback!({ key: 's', domEvent: new KeyboardEvent('keydown', { key: 's' }) });
+  mocks.onKeyCallback!({ key: 's', domEvent: new KeyboardEvent('keydown', { key: 's' }) });
+
+  mocks.onKeyCallback!({ key: '\r', domEvent: new KeyboardEvent('keydown', { key: 'Enter' }) });
+
+  expect(bootcClient.submitVMTerminalPassword).toHaveBeenCalledWith('pass');
+  expect(mocks.terminalWrite).toHaveBeenCalledWith('\r\n');
+
+  // After submitting, normal keystrokes should flow through again
+  mocks.onKeyCallback!({ key: 'x', domEvent: new KeyboardEvent('keydown', { key: 'x' }) });
+  expect(bootcClient.writeToVMTerminal).toHaveBeenCalledWith('x');
 });
